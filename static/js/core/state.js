@@ -1,0 +1,22 @@
+export const state = {
+    words: [],
+    allLetterElements: [],
+    currentLetterIndex: 0,
+    correctChars: 0,
+    typedChars: 0,
+    errors: 0,
+    timer: null,
+    idleTimer: null,
+    gameActive: false,
+    testOver: false,
+    testMode: 'time',
+    testValue: 30,
+    testStartTime: null,
+    activeGuide: { fingers: [], key: null },
+    isMuted: false,
+    currentLang: 'en',
+    currentUser: null,
+    wpmSamples: [],
+    lastSampleTime: null,
+    saveResetTimer: null
+};
