@@ -1,0 +1,10 @@
+/* base.css - Asosiy HTML va Body sozlamalari */
+* { box-sizing: border-box; font-family: 'Courier New', Courier, monospace; }
+html, body { height: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  display: flex; align-items: center; justify-content: center;
+  min-height: 100vh; padding: 20px;
+  transition: background 0.3s, color 0.3s;
+}
+.hidden { display: none !important; }

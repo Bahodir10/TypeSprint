@@ -1,0 +1,86 @@
+/* modals.css - Auth va barcha popup oynalar */
+.modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.7); backdrop-filter: blur(4px);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 100; padding: 20px;
+  }
+  .modal-box {
+    background: var(--panel); border-radius: 16px; padding: 32px;
+    width: 100%; max-width: 420px; position: relative;
+    border: 1px solid var(--border);
+    box-shadow: 0 24px 60px rgba(0,0,0,0.6);
+    animation: modalIn 0.2s ease-out;
+  }
+  @keyframes modalIn {
+    from { opacity: 0; transform: translateY(-12px) scale(0.97); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  .modal-close {
+    position: absolute; top: 16px; right: 16px;
+    background: transparent; border: none; color: var(--muted);
+    font-size: 1.1rem; cursor: pointer; padding: 4px 8px; border-radius: 6px;
+    transition: color 0.2s, background 0.2s;
+  }
+  .modal-close:hover { color: var(--text); background: rgba(255,255,255,0.05); }
+  
+  /* AUTH MODAL */
+  #authContainer { display: flex; align-items: center; gap: 8px; }
+  #loggedOutBtns, #loggedInBtns { display: flex; align-items: center; gap: 8px; }
+  
+  #loggedOutBtns button, #loggedInBtns button {
+    padding: 6px 14px; border-radius: 6px; border: 1px solid transparent;
+    background: var(--key-bg); color: var(--muted); cursor: pointer;
+    transition: all 0.2s; font-family: Inter, sans-serif; font-size: 0.85rem;
+  }
+  #loggedOutBtns button:hover, #loggedInBtns button:hover {
+    color: var(--text); border-color: var(--accent);
+  }
+  #signUpBtn { border-color: var(--accent); color: var(--accent); }
+  #signUpBtn:hover { background: rgba(34, 197, 94, 0.1); }
+  
+  .user-badge {
+    font-family: Inter, sans-serif; font-size: 0.85rem;
+    color: var(--accent); padding: 5px 10px;
+    background: rgba(34, 197, 94, 0.1); border-radius: 6px;
+    border: 1px solid rgba(34,197,94,0.2);
+  }
+  
+  .modal-tabs {
+    display: flex; gap: 4px; background: rgba(0,0,0,0.3);
+    padding: 4px; border-radius: 10px; margin-bottom: 24px;
+  }
+  .modal-tab {
+    flex: 1; padding: 8px; border: none; border-radius: 8px;
+    background: transparent; color: var(--muted);
+    cursor: pointer; font-family: Inter, sans-serif; font-size: 0.9rem;
+    transition: all 0.2s;
+  }
+  .modal-tab.active { background: rgba(255,255,255,0.08); color: var(--text); font-weight: 600; }
+  .modal-pane { display: none; }
+  .modal-pane.active { display: block; }
+  .modal-title { margin: 0 0 4px; font-size: 1.3rem; font-family: Inter, sans-serif; font-weight: 700; }
+  .modal-sub { margin: 0 0 20px; color: var(--muted); font-family: Inter, sans-serif; font-size: 0.9rem; }
+  .modal-field { margin-bottom: 14px; }
+  .modal-field label {
+    display: block; margin-bottom: 6px; font-family: Inter, sans-serif; font-size: 0.85rem; color: var(--muted); font-weight: 500;
+  }
+  .hint { font-size: 0.78rem; color: var(--muted); opacity: 0.6; margin-left: 6px; }
+  .modal-field input {
+    width: 100%; padding: 10px 14px; border-radius: 8px;
+    background: rgba(255,255,255,0.04); border: 1px solid var(--border);
+    color: var(--text); font-family: 'Courier New', monospace; font-size: 1rem;
+    outline: none; transition: border-color 0.2s;
+  }
+  .modal-field input:focus { border-color: var(--accent); }
+  .modal-error {
+    background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239,68,68,0.3);
+    color: #fca5a5; padding: 10px 14px; border-radius: 8px;
+    font-family: Inter, sans-serif; font-size: 0.85rem; margin-bottom: 12px;
+  }
+  .modal-btn {
+    width: 100%; padding: 11px; border: none; border-radius: 8px;
+    background: var(--accent); color: #062017;
+    font-family: Inter, sans-serif; font-size: 0.95rem; font-weight: 700;
+    cursor: pointer; transition: opacity 0.2s; margin-top: 4px;
+  }
+  .modal-btn:hover { opacity: 0.87; }

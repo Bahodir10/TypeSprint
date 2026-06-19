@@ -1,0 +1,26 @@
+/* themes.css - Ranglar va O'zgaruvchilar */
+:root {
+    --bg: #0f1724; --panel: #0b1220; --accent: #22c55e; --muted: #94a3b8;
+    --text: #e6eef8; --error: #ef4444; --caret: #6366f1;
+    --key-bg: rgba(255, 255, 255, 0.05);
+    --key-text: var(--muted);
+    --key-guide-bg: rgba(99, 102, 241, 0.2);
+    --key-guide-glow: #6366f1;
+    --finger-highlight: var(--accent);
+    --border: rgba(255,255,255,0.06);
+  }
+  body.theme-olivia {
+    --bg: #1A1D2A; --panel: #151724; --text: #DEE0E4; --muted: #6B6F7C;
+    --accent: #A9DC76; --error: #FF6188; --caret: #78DCE8;
+    --key-bg: #212433; --key-guide-bg: rgba(120, 220, 232, 0.2); --key-guide-glow: #78DCE8; --finger-highlight: #78DCE8;
+  }
+  body.theme-serika {
+    --bg: #323437; --panel: #2C2E31; --text: #E2B714; --muted: #646669;
+    --accent: #D1D0C5; --error: #CA4754; --caret: #E2B714;
+    --key-bg: #414447; --key-guide-bg: rgba(226, 183, 20, 0.2); --key-guide-glow: #E2B714; --finger-highlight: #E2B714;
+  }
+  body.theme-vscode {
+    --bg: #1e1e1e; --panel: #252526; --text: #d4d4d4; --muted: #808080;
+    --accent: #4ec9b0; --error: #f44747; --caret: #aeafad;
+    --key-bg: #333333; --key-guide-bg: rgba(86, 156, 214, 0.2); --key-guide-glow: #569cd6; --finger-highlight: #569cd6;
+  }

@@ -1,0 +1,40 @@
+/* keyboard.css - Virtual klaviatura va qo'llar animatsiyasi */
+.typing-tutor {
+    margin-top: 24px; opacity: 0; transition: opacity 0.3s;
+    pointer-events: none; position: relative;
+  }
+  .typing-tutor.visible { opacity: 1; }
+  .hands {
+    position: absolute; top: -5px; left: 0; width: 100%; height: 100%;
+    z-index: 5; overflow: visible;
+  }
+  .hands svg { width: 100%; height: 100%; overflow: visible; }
+  .hand path { stroke-linecap: round; stroke-linejoin: round; transform-origin: 50% 100%; }
+  .hand .finger-outline {
+    stroke: var(--muted); stroke-width: 2px; opacity: 0.4; fill: none;
+    transition: stroke 0.2s ease-in-out, opacity 0.2s ease-in-out, stroke-width 0.2s ease-in-out;
+  }
+  .hand .finger-fill { stroke: none; fill: var(--muted); opacity: 0.05; }
+  .hand g.highlight .finger-outline { stroke: var(--key-guide-glow); opacity: 1; stroke-width: 2.5px; }
+  
+  .keyboard {
+    display: flex; flex-direction: column; gap: 8px; padding: 12px;
+    background: var(--panel); border-radius: 8px; border: 1px solid var(--border);
+    position: relative; z-index: 1; box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+  }
+  .keyboard-row { display: flex; justify-content: center; gap: 8px; }
+  .key {
+    display: flex; align-items: center; justify-content: center;
+    height: 50px; min-width: 50px; padding: 0 10px;
+    background: var(--key-bg); color: var(--key-text); border-radius: 8px;
+    font-size: 1.1rem; font-weight: bold; font-family: Inter, sans-serif;
+    transition: transform 0.1s, box-shadow 0.1s, background-color 0.1s, color 0.1s;
+    box-shadow: 0 3px 0 rgba(0,0,0,0.4); border: 1px solid transparent;
+  }
+  .key.space { flex-grow: 1; max-width: 400px; }
+  .key.guide {
+    background-color: var(--key-guide-bg); color: var(--text);
+    border: 1px solid var(--key-guide-glow);
+    box-shadow: 0 3px 0 rgba(0,0,0,0.4), 0 0 10px var(--key-guide-glow);
+  }
+  .key.pressed { transform: translateY(2px); box-shadow: 0 1px 0 rgba(0,0,0,0.4); }

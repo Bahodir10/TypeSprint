@@ -1,0 +1,54 @@
+/* layout.css - Layout, Header, va Footer */
+.container {
+    width: 100%; max-width: 1000px;
+    background: linear-gradient(180deg, rgba(255,255,255,0.02), transparent);
+    border-radius: 12px; padding: 18px;
+    box-shadow: 0 10px 30px rgba(2,6,23,0.6);
+  }
+  
+  @media (max-width: 1100px) {
+    .container { max-width: 1100px; padding: 14px; }
+    header { flex-wrap: wrap; }
+    .controls { flex-wrap: wrap; gap: 10px; }
+    main { grid-template-columns: 1fr 220px; }
+  }
+  
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 12px; margin-bottom: 12px;
+  }
+  .header-left { display: flex; align-items: center; gap: 24px; }
+  header h1 { margin: 0; font-size: 1.35rem; letter-spacing: 0.5px; }
+  
+  main { display: grid; grid-template-columns: 1fr 260px; gap: 18px; align-items: start; }
+  
+  .controls { display: flex; align-items: center; gap: 16px; }
+  .control-group { display: flex; align-items: center; gap: 8px; }
+  .control-group .label { color: var(--muted); font-size: 0.9rem; font-family: Inter, sans-serif; }
+  .options { display: flex; gap: 4px; background: rgba(0,0,0,0.2); padding: 4px; border-radius: 8px; }
+  .options button {
+    padding: 4px 10px; border-radius: 6px; border: none;
+    background: transparent; color: var(--muted);
+    cursor: pointer; transition: all 0.2s; font-family: Inter, sans-serif;
+  }
+  .options button.active { background: rgba(255,255,255,0.08); color: var(--text); }
+  #restartBtn, #muteBtn {
+    background: transparent; border: none; color: var(--text);
+    font-size: 1.5rem; cursor: pointer; padding: 0; line-height: 1;
+  }
+  
+  footer {
+    margin-top: 24px; text-align: center; color: var(--muted);
+    display: flex; flex-direction: column; align-items: center; gap: 10px;
+  }
+  footer kbd { background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px; font-family: Inter, sans-serif; }
+  .theme-switcher { display: flex; gap: 8px; }
+  .theme-switcher button {
+    width: 20px; height: 20px; border-radius: 50%;
+    border: 2px solid rgba(255,255,255,0.2); cursor: pointer; transition: transform 0.2s;
+  }
+  .theme-switcher button:hover { transform: scale(1.1); }
+  .theme-switcher button[data-theme="default"] { background-color: #0f1724; }
+  .theme-switcher button[data-theme="olivia"] { background-color: #1A1D2A; }
+  .theme-switcher button[data-theme="serika"] { background-color: #323437; }
+  .theme-switcher button[data-theme="vscode"] { background-color: #1e1e1e; }
