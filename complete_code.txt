@@ -1,0 +1,3853 @@
+
+=== File: ./static/app.js ===
+
+// app.js — TypeSprint with Auth + 9 Stats + Statistics Modal
+
+// --- Element Refs ---
+const caret = document.getElementById('caret');
+const themeSwitcher = document.getElementById('themeSwitcher');
+const wordStream = document.getElementById('wordStream');
+const restartBtn = document.getElementById('restartBtn');
+const modeOptions = document.getElementById('modeOptions');
+const valueOptions = document.getElementById('valueOptions');
+const saveResultBtn = document.getElementById('saveResult');
+const typingTutor = document.getElementById('typingTutor');
+const keyboardEl = document.getElementById('keyboard');
+const handsSvg = document.querySelector('#hands svg');
+const muteBtn = document.getElementById('muteBtn');
+const langOptions = document.getElementById('langOptions');
+
+const wpmEl = document.getElementById('wpm');
+const rawWpmEl = document.getElementById('rawWpm');
+const accuracyEl = document.getElementById('accuracy');
+const timeEl = document.getElementById('time');
+const correctCountEl = document.getElementById('correctCount');
+const typedCountEl = document.getElementById('typedCount');
+const errorsEl = document.getElementById('errors');
+const consistencyEl = document.getElementById('consistency');
+const progressEl = document.getElementById('progress');
+
+// Auth elements
+const loggedOutBtns = document.getElementById('loggedOutBtns');
+const loggedInBtns = document.getElementById('loggedInBtns');
+const userBadge = document.getElementById('userBadge');
+const signUpBtn = document.getElementById('signUpBtn');
+const signInBtn = document.getElementById('signInBtn');
+const signOutBtn = document.getElementById('signOutBtn');
+const statsBtn = document.getElementById('statsBtn');
+
+// Modals
+const authModal = document.getElementById('authModal');
+const authModalClose = document.getElementById('authModalClose');
+const statsModal = document.getElementById('statsModal');
+const statsModalClose = document.getElementById('statsModalClose');
+const statsContent = document.getElementById('statsContent');
+const statsUsernameEl = document.getElementById('statsUsername');
+
+// --- State ---
+let words = [], allLetterElements = [];
+let currentLetterIndex = 0, correctChars = 0, typedChars = 0, errors = 0;
+let timer, gameActive = false, testOver = false, testMode = 'time', testValue = 30;
+let testStartTime, idleTimer = null;
+let activeGuide = { fingers: [], key: null };
+let isMuted = false;
+let currentLang = 'en';
+let currentUser = null;
+
+// Consistency tracking
+let wpmSamples = [];
+let lastSampleTime = null;
+
+// Save-button reset timer (prevents stale resets from clobbering newer save status)
+let saveResetTimer = null;
+
+// --- Translations ---
+const TRANSLATIONS = {
+    en: {
+        mode: 'Mode:', count: 'Count:', wpm: 'WPM', accuracy: 'Accuracy',
+        time: 'Time', correct: 'Correct', typed: 'Typed', errors: 'Errors',
+        saveResult: 'Save Result', restartTitle: 'Restart Test (Esc)',
+        restartFooter: 'Press <kbd>Esc</kbd> to restart', muteTitle: 'Mute/Unmute Sound',
+        modeTime: 'time', modeWords: 'words'
+    },
+    uz: {
+        mode: 'Rejim:', count: 'Soni:', wpm: 'Tezlik', accuracy: 'Aniqlik',
+        time: 'Vaqt', correct: "To'g'ri", typed: 'Yozildi', errors: 'Xatolar',
+        saveResult: 'Natijani Saqlash', restartTitle: "Qayta Boshlash (Esc)",
+        restartFooter: "Qayta boshlash uchun <kbd>Esc</kbd> bosing", muteTitle: "Ovozsiz/Ovozli",
+        modeTime: 'vaqt', modeWords: "so'zlar"
+    }
+};
+
+// --- Audio ---
+const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+let isAudioUnlocked = false;
+
+function setMuteState(muted) {
+    isMuted = muted;
+    muteBtn.textContent = muted ? '🔇' : '🔊';
+    localStorage.setItem('typingTestMuted', isMuted);
+}
+
+function playKeySound() {
+    if (isMuted || !isAudioUnlocked) return;
+    const now = audioContext.currentTime;
+    const osc = audioContext.createOscillator();
+    const gain = audioContext.createGain();
+    osc.connect(gain); gain.connect(audioContext.destination);
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(180, now);
+    osc.frequency.exponentialRampToValueAtTime(80, now + 0.1);
+    gain.gain.setValueAtTime(1.2, now);
+    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
+    osc.start(now); osc.stop(now + 0.12);
+}
+
+function unlockAudio() {
+    if (isAudioUnlocked) return;
+    if (audioContext.state === 'suspended') audioContext.resume();
+    const osc = audioContext.createOscillator();
+    const g = audioContext.createGain();
+    osc.connect(g); g.connect(audioContext.destination);
+    g.gain.value = 0; osc.start(0); osc.stop(0.001);
+    isAudioUnlocked = true;
+}
+
+// --- Config ---
+const CONFIG = { time: [15, 30, 60, 120], words: [10, 25, 50, 100] };
+const KEY_MAP = {
+    '`': { key: '`', finger: 'left-pinky' }, '~': { key: '`', finger: 'left-pinky' }, '1': { key: '1', finger: 'left-pinky' }, '!': { key: '1', finger: 'left-pinky' },
+    '2': { key: '2', finger: 'left-ring' }, '@': { key: '2', finger: 'left-ring' }, '3': { key: '3', finger: 'left-middle' }, '#': { key: '3', finger: 'left-middle' },
+    '4': { key: '4', finger: 'left-index' }, '$': { key: '4', finger: 'left-index' }, '5': { key: '5', finger: 'left-index' }, '%': { key: '5', finger: 'left-index' },
+    '6': { key: '6', finger: 'right-index' }, '^': { key: '6', finger: 'right-index' }, '7': { key: '7', finger: 'right-index' }, '&': { key: '7', finger: 'right-index' },
+    '8': { key: '8', finger: 'right-middle' }, '*': { key: '8', finger: 'right-middle' }, '9': { key: '9', finger: 'right-ring' }, '(': { key: '9', finger: 'right-ring' },
+    '0': { key: '0', finger: 'right-pinky' }, ')': { key: '0', finger: 'right-pinky' }, '-': { key: '-', finger: 'right-pinky' }, '_': { key: '-', finger: 'right-pinky' },
+    '=': { key: '=', finger: 'right-pinky' }, '+': { key: '=', finger: 'right-pinky' }, 'q': { key: 'q', finger: 'left-pinky' }, 'Q': { key: 'q', finger: 'left-pinky' },
+    'w': { key: 'w', finger: 'left-ring' }, 'W': { key: 'w', finger: 'left-ring' }, 'e': { key: 'e', finger: 'left-middle' }, 'E': { key: 'e', finger: 'left-middle' },
+    'r': { key: 'r', finger: 'left-index' }, 'R': { key: 'r', finger: 'left-index' }, 't': { key: 't', finger: 'left-index' }, 'T': { key: 't', finger: 'left-index' },
+    'y': { key: 'y', finger: 'right-index' }, 'Y': { key: 'y', finger: 'right-index' }, 'u': { key: 'u', finger: 'right-index' }, 'U': { key: 'u', finger: 'right-index' },
+    'i': { key: 'i', finger: 'right-middle' }, 'I': { key: 'i', finger: 'right-middle' }, 'o': { key: 'o', finger: 'right-ring' }, 'O': { key: 'o', finger: 'right-ring' },
+    'p': { key: 'p', finger: 'right-pinky' }, 'P': { key: 'p', finger: 'right-pinky' }, '[': { key: '[', finger: 'right-pinky' }, '{': { key: '[', finger: 'right-pinky' },
+    ']': { key: ']', finger: 'right-pinky' }, '}': { key: ']', finger: 'right-pinky' }, '\\': { key: '\\', finger: 'right-pinky' }, '|': { key: '\\', finger: 'right-pinky' },
+    'a': { key: 'a', finger: 'left-pinky' }, 'A': { key: 'a', finger: 'left-pinky' }, 's': { key: 's', finger: 'left-ring' }, 'S': { key: 's', finger: 'left-ring' },
+    'd': { key: 'd', finger: 'left-middle' }, 'D': { key: 'd', finger: 'left-middle' }, 'f': { key: 'f', finger: 'left-index' }, 'F': { key: 'f', finger: 'left-index' },
+    'g': { key: 'g', finger: 'left-index' }, 'G': { key: 'g', finger: 'left-index' }, 'h': { key: 'h', finger: 'right-index' }, 'H': { key: 'h', finger: 'right-index' },
+    'j': { key: 'j', finger: 'right-index' }, 'J': { key: 'j', finger: 'right-index' }, 'k': { key: 'k', finger: 'right-middle' }, 'K': { key: 'k', finger: 'right-middle' },
+    'l': { key: 'l', finger: 'right-ring' }, 'L': { key: 'l', finger: 'right-ring' }, ';': { key: ';', finger: 'right-pinky' }, ':': { key: ';', finger: 'right-pinky' },
+    '\'': { key: '\'', finger: 'right-pinky' }, '"': { key: '\'', finger: 'right-pinky' }, 'z': { key: 'z', finger: 'left-pinky' }, 'Z': { key: 'z', finger: 'left-pinky' },
+    'x': { key: 'x', finger: 'left-ring' }, 'X': { key: 'x', finger: 'left-ring' }, 'c': { key: 'c', finger: 'left-middle' }, 'C': { key: 'c', finger: 'left-middle' },
+    'v': { key: 'v', finger: 'left-index' }, 'V': { key: 'v', finger: 'left-index' }, 'b': { key: 'b', finger: 'left-index' }, 'B': { key: 'b', finger: 'left-index' },
+    'n': { key: 'n', finger: 'right-index' }, 'N': { key: 'n', finger: 'right-index' }, 'm': { key: 'm', finger: 'right-index' }, 'M': { key: 'm', finger: 'right-index' },
+    ',': { key: ',', finger: 'right-middle' }, '<': { key: ',', finger: 'right-middle' }, '.': { key: '.', finger: 'right-ring' }, '>': { key: '.', finger: 'right-ring' },
+    '/': { key: '/', finger: 'right-pinky' }, '?': { key: '/', finger: 'right-pinky' }, ' ': { key: 'space', finger: ['left-thumb', 'right-thumb'] }
+};
+const KEYBOARD_LAYOUT = [
+    ['`','1','2','3','4','5','6','7','8','9','0','-','='],
+    ['q','w','e','r','t','y','u','i','o','p','[',']','\\'],
+    ['a','s','d','f','g','h','j','k','l',';','\''],
+    ['z','x','c','v','b','n','m',',','.','/'],
+    ['space']
+];
+const HOME_ROW_MAP = {
+    'left-pinky': 'a', 'left-ring': 's', 'left-middle': 'd', 'left-index': 'f',
+    'right-index': 'j', 'right-middle': 'k', 'right-ring': 'l', 'right-pinky': ';',
+    'left-thumb': 'space', 'right-thumb': 'space'
+};
+
+// --- Auth ---
+
+async function checkSession() {
+    try {
+        const res = await fetch('/api/auth/me');
+        if (res.ok) {
+            const data = await res.json();
+            setLoggedIn(data.username);
+        } else {
+            setLoggedOut();
+        }
+    } catch { setLoggedOut(); }
+}
+
+function setLoggedIn(username) {
+    currentUser = username;
+    userBadge.textContent = username;
+    loggedOutBtns.classList.add('hidden');
+    loggedInBtns.classList.remove('hidden');
+}
+
+function setLoggedOut() {
+    currentUser = null;
+    loggedOutBtns.classList.remove('hidden');
+    loggedInBtns.classList.add('hidden');
+}
+
+function openAuthModal(tab = 'signin') {
+    authModal.classList.remove('hidden');
+    document.querySelectorAll('.modal-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+    document.querySelectorAll('.modal-pane').forEach(p => p.classList.toggle('active', p.id === `tab${tab.charAt(0).toUpperCase() + tab.slice(1)}`));
+    const input = tab === 'signin' ? document.getElementById('siUsername') : document.getElementById('suUsername');
+    setTimeout(() => input && input.focus(), 50);
+}
+
+function closeAuthModal() { authModal.classList.add('hidden'); }
+
+function setupAuthModal() {
+    signUpBtn.addEventListener('click', () => openAuthModal('signup'));
+    signInBtn.addEventListener('click', () => openAuthModal('signin'));
+    authModalClose.addEventListener('click', closeAuthModal);
+    authModal.addEventListener('click', e => { if (e.target === authModal) closeAuthModal(); });
+
+    document.querySelectorAll('.modal-tab').forEach(tab => {
+        tab.addEventListener('click', () => openAuthModal(tab.dataset.tab));
+    });
+
+    // Sign In submit
+    document.getElementById('siSubmit').addEventListener('click', async () => {
+        const username = document.getElementById('siUsername').value.trim();
+        const password = document.getElementById('siPassword').value;
+        const errEl = document.getElementById('siError');
+        errEl.classList.add('hidden');
+        try {
+            const res = await fetch('/api/auth/signin', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password })
+            });
+            const data = await res.json();
+            if (!res.ok) { errEl.textContent = data.error || 'Sign in failed'; errEl.classList.remove('hidden'); return; }
+            setLoggedIn(data.username);
+            closeAuthModal();
+        } catch { errEl.textContent = 'Network error'; errEl.classList.remove('hidden'); }
+    });
+
+    // Sign Up submit
+    document.getElementById('suSubmit').addEventListener('click', async () => {
+        const username = document.getElementById('suUsername').value.trim();
+        const password = document.getElementById('suPassword').value;
+        const errEl = document.getElementById('suError');
+        errEl.classList.add('hidden');
+        try {
+            const res = await fetch('/api/auth/signup', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password })
+            });
+            const data = await res.json();
+            if (!res.ok) { errEl.textContent = data.error || 'Sign up failed'; errEl.classList.remove('hidden'); return; }
+            setLoggedIn(data.username);
+            closeAuthModal();
+        } catch { errEl.textContent = 'Network error'; errEl.classList.remove('hidden'); }
+    });
+
+    // Enter key in auth fields
+    ['siUsername', 'siPassword'].forEach(id => {
+        document.getElementById(id).addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('siSubmit').click(); });
+    });
+    ['suUsername', 'suPassword'].forEach(id => {
+        document.getElementById(id).addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('suSubmit').click(); });
+    });
+
+    signOutBtn.addEventListener('click', async () => {
+        await fetch('/api/auth/signout', { method: 'POST' });
+        setLoggedOut();
+    });
+}
+
+// --- Stats Modal ---
+
+function setupStatsModal() {
+    statsBtn.addEventListener('click', openStatsModal);
+    statsModalClose.addEventListener('click', () => statsModal.classList.add('hidden'));
+    statsModal.addEventListener('click', e => { if (e.target === statsModal) statsModal.classList.add('hidden'); });
+}
+
+async function openStatsModal() {
+    statsModal.classList.remove('hidden');
+    statsUsernameEl.textContent = currentUser;
+    statsContent.innerHTML = '<div class="stats-loading">Loading your stats…</div>';
+    try {
+        const res = await fetch('/api/results');
+        if (!res.ok) { statsContent.innerHTML = '<div class="stats-loading">Could not load stats.</div>'; return; }
+        const data = await res.json();
+        renderStatsModal(data);
+    } catch {
+        statsContent.innerHTML = '<div class="stats-loading">Network error.</div>';
+    }
+}
+
+function renderStatsModal(s) {
+    if (!s || s.tests_completed === 0) {
+        statsContent.innerHTML = `
+          <div class="stats-empty">
+            <div class="stats-empty-icon">⌨️</div>
+            <p>No tests yet! Complete a typing test to see your stats here.</p>
+          </div>`;
+        return;
+    }
+
+    const totalMin = Math.floor((s.total_time_seconds || 0) / 60);
+    const improvSign = s.improvement >= 0 ? '+' : '';
+    const improvColor = s.improvement >= 0 ? 'var(--accent)' : 'var(--error)';
+
+    // Build WPM sparkline
+    const wpmData = s.wpm_history || [];
+    const accData = s.acc_history || [];
+
+    statsContent.innerHTML = `
+      <div class="sm-grid">
+        <div class="sm-card sm-card--accent">
+          <div class="sm-card-label">Best WPM</div>
+          <div class="sm-card-value">${s.best_wpm}</div>
+        </div>
+        <div class="sm-card">
+          <div class="sm-card-label">Avg WPM</div>
+          <div class="sm-card-value">${s.avg_wpm}</div>
+        </div>
+        <div class="sm-card">
+          <div class="sm-card-label">Best Accuracy</div>
+          <div class="sm-card-value">${s.best_accuracy ? s.best_accuracy.toFixed(1) + '%' : '—'}</div>
+        </div>
+        <div class="sm-card">
+          <div class="sm-card-label">Avg Accuracy</div>
+          <div class="sm-card-value">${s.avg_accuracy}%</div>
+        </div>
+        <div class="sm-card">
+          <div class="sm-card-label">Tests Done</div>
+          <div class="sm-card-value">${s.tests_completed}</div>
+        </div>
+        <div class="sm-card">
+          <div class="sm-card-label">Avg Errors</div>
+          <div class="sm-card-value">${s.avg_errors}</div>
+        </div>
+        <div class="sm-card">
+          <div class="sm-card-label">Time Practiced</div>
+          <div class="sm-card-value">${totalMin}<span class="sm-unit">min</span></div>
+        </div>
+        <div class="sm-card">
+          <div class="sm-card-label">Improvement</div>
+          <div class="sm-card-value" style="color:${improvColor}">${improvSign}${s.improvement} <span class="sm-unit">wpm</span></div>
+        </div>
+      </div>
+
+      ${wpmData.length > 1 ? `
+      <div class="sm-chart-section">
+        <div class="sm-chart-title">WPM over last ${wpmData.length} tests</div>
+        <canvas id="wpmChart" class="sm-canvas"></canvas>
+      </div>
+      <div class="sm-chart-section">
+        <div class="sm-chart-title">Accuracy over last ${accData.length} tests</div>
+        <canvas id="accChart" class="sm-canvas"></canvas>
+      </div>
+      ` : ''}
+
+      <div class="sm-history-section">
+        <div class="sm-chart-title">Recent Tests</div>
+        <div class="sm-table-wrap">
+          <table class="sm-table">
+            <thead><tr><th>WPM</th><th>Raw</th><th>Acc</th><th>Errors</th><th>Mode</th><th>Date</th></tr></thead>
+            <tbody>
+              ${(s.recent_results || []).map(r => `
+                <tr>
+                  <td class="td-wpm">${r.wpm}</td>
+                  <td class="td-muted">${r.raw_wpm ? Math.round(r.raw_wpm) : '—'}</td>
+                  <td class="${r.accuracy >= 97 ? 'td-good' : r.accuracy >= 90 ? 'td-ok' : 'td-bad'}">${r.accuracy ? r.accuracy.toFixed(1) + '%' : '—'}</td>
+                  <td class="td-muted">${r.errors}</td>
+                  <td class="td-muted">${r.mode} ${r.value}</td>
+                  <td class="td-muted">${r.client_time ? new Date(r.client_time).toLocaleDateString() : '—'}</td>
+                </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+
+    // Draw canvas charts
+    if (wpmData.length > 1) {
+        drawLineChart('wpmChart', wpmData, 'var(--accent)');
+        drawLineChart('accChart', accData, 'var(--caret)', true);
+    }
+}
+
+function drawLineChart(canvasId, data, color, isPercent = false) {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) return;
+    const dpr = window.devicePixelRatio || 1;
+    const W = canvas.offsetWidth || 500;
+    const H = 100;
+    canvas.width = W * dpr;
+    canvas.height = H * dpr;
+    canvas.style.width = W + 'px';
+    canvas.style.height = H + 'px';
+    const ctx = canvas.getContext('2d');
+    ctx.scale(dpr, dpr);
+
+    const pad = { t: 10, b: 20, l: 32, r: 10 };
+    const chartW = W - pad.l - pad.r;
+    const chartH = H - pad.t - pad.b;
+
+    const min = Math.max(0, Math.min(...data) - 5);
+    const max = Math.max(...data) + 5;
+
+    // Grid lines
+    ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+    ctx.lineWidth = 1;
+    [0, 0.5, 1].forEach(frac => {
+        const y = pad.t + chartH * (1 - frac);
+        ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(pad.l + chartW, y); ctx.stroke();
+        const val = isPercent ? (min + (max - min) * frac).toFixed(0) + '%' : Math.round(min + (max - min) * frac);
+        ctx.fillStyle = 'rgba(255,255,255,0.3)';
+        ctx.font = '10px Inter, sans-serif';
+        ctx.textAlign = 'right';
+        ctx.fillText(val, pad.l - 4, y + 3);
+    });
+
+    // Line
+    const pts = data.map((v, i) => ({
+        x: pad.l + (i / (data.length - 1)) * chartW,
+        y: pad.t + chartH * (1 - (v - min) / (max - min))
+    }));
+
+    // Fill gradient (Fixed string parsing that was crashing UI thread)
+    const grad = ctx.createLinearGradient(0, pad.t, 0, pad.t + chartH);
+    let stopColor = 'rgba(34,197,94,0.25)'; // fallback
+    if (color.includes('accent')) stopColor = 'rgba(34,197,94,0.25)';
+    else if (color.includes('caret')) stopColor = 'rgba(99,102,241,0.25)';
+    
+    grad.addColorStop(0, stopColor);
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pad.t + chartH);
+    pts.forEach(p => ctx.lineTo(p.x, p.y));
+    ctx.lineTo(pts[pts.length - 1].x, pad.t + chartH);
+    ctx.closePath();
+    ctx.fillStyle = grad;
+    ctx.fill();
+
+    // Line stroke
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    pts.forEach(p => ctx.lineTo(p.x, p.y));
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.lineJoin = 'round';
+    ctx.stroke();
+
+    // Last Point Dot
+    const last = pts[pts.length - 1];
+    ctx.beginPath();
+    ctx.arc(last.x, last.y, 3, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.fill();
+}
+
+// --- Core Game ---
+
+async function fetchWords() {
+    try { const r = await fetch('/api/words'); return await r.json(); }
+    catch { return ["error","loading","words"]; }
+}
+
+function shuffleArray(a) {
+    for (let i = a.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [a[i], a[j]] = [a[j], a[i]];
+    }
+}
+
+function populateWordStream() {
+    wordStream.innerHTML = ''; allLetterElements = [];
+    shuffleArray(words);
+    let toDisplay = testMode === 'words' ? words.slice(0, testValue) : words.slice(0, 200);
+    toDisplay.forEach((wordStr, wordIndex) => {
+        const wordDiv = document.createElement('div');
+        wordDiv.classList.add('word');
+        for (const char of wordStr) {
+            const span = document.createElement('span');
+            span.classList.add('letter');
+            span.textContent = char;
+            wordDiv.appendChild(span);
+            allLetterElements.push(span);
+        }
+        if (wordIndex < toDisplay.length - 1) {
+            const spaceSpan = document.createElement('span');
+            spaceSpan.classList.add('letter');
+            spaceSpan.innerHTML = '&nbsp;';
+            spaceSpan.dataset.char = ' ';
+            wordDiv.appendChild(spaceSpan);
+            allLetterElements.push(spaceSpan);
+        }
+        wordStream.appendChild(wordDiv);
+    });
+    wordStream.appendChild(caret);
+}
+
+function restartTest() { unlockAudio(); resetToMenu(); }
+
+function resetToMenu() {
+    testOver = false;
+    resetFingerPositions();
+    gameActive = false;
+    clearInterval(timer);
+    clearTimeout(idleTimer);
+    currentLetterIndex = 0; correctChars = 0; typedChars = 0; errors = 0;
+    testStartTime = null; wpmSamples = []; lastSampleTime = null;
+    populateWordStream();
+    updateCursor();
+    caret.classList.add('blinking');
+    typingTutor.classList.add('visible');
+    updateStats();
+    calculateResults();
+    if (testMode === 'time') { updateTimerDisplay(testValue); } else { timeEl.textContent = '00:00'; }
+    [...valueOptions.children].forEach(btn => btn.classList.toggle('active', parseInt(btn.dataset.value, 10) === testValue));
+    wordStream.classList.remove('unfocused');
+    wordStream.focus();
+}
+
+function startGameLogic() {
+    if (gameActive) return;
+    gameActive = true;
+    testStartTime = new Date();
+    lastSampleTime = new Date();
+    wpmSamples = [];
+
+    if (testMode === 'time') {
+        let timeRemaining = testValue;
+        updateTimerDisplay(timeRemaining);
+        timer = setInterval(() => {
+            timeRemaining--;
+            updateTimerDisplay(timeRemaining);
+            sampleWPM();
+            if (timeRemaining <= 0) endGame();
+        }, 1000);
+    } else {
+        timeEl.textContent = '00:00';
+        timer = setInterval(() => {
+            if (!gameActive) return;
+            const elapsed = Math.floor((new Date() - testStartTime) / 1000);
+            updateTimerDisplay(elapsed, true);
+            sampleWPM();
+        }, 1000);
+    }
+    setHomeRowPositions();
+    updateGuide();
+}
+
+function sampleWPM() {
+    if (!testStartTime) return;
+    const now = new Date();
+    const elapsed = (now - testStartTime) / 60000;
+    if (elapsed < 0.05) return;
+    const currentWpm = Math.round((typedChars / 5) / elapsed);
+    wpmSamples.push(currentWpm);
+}
+
+function computeConsistency() {
+    if (wpmSamples.length < 2) return null;
+    const mean = wpmSamples.reduce((a, b) => a + b, 0) / wpmSamples.length;
+    if (mean === 0) return null;
+    const variance = wpmSamples.reduce((acc, v) => acc + Math.pow(v - mean, 2), 0) / wpmSamples.length;
+    const stdDev = Math.sqrt(variance);
+    const cv = (stdDev / mean) * 100;
+    return Math.max(0, Math.round(100 - cv));
+}
+
+function endGame() {
+    testOver = true;
+    resetFingerPositions();
+    clearInterval(timer);
+    clearTimeout(idleTimer);
+    gameActive = false;
+    calculateResults();
+    caret.style.opacity = '0';
+    caret.classList.remove('blinking');
+    typingTutor.classList.remove('visible');
+}
+
+// --- Input ---
+
+document.addEventListener('keydown', (e) => {
+    // Don't intercept when typing in an input field (auth modal etc.)
+    const activeTag = document.activeElement && document.activeElement.tagName;
+    if (activeTag === 'INPUT' || activeTag === 'TEXTAREA') return;
+
+    if (e.key === 'Escape') {
+        if (!authModal.classList.contains('hidden')) { closeAuthModal(); return; }
+        if (!statsModal.classList.contains('hidden')) { statsModal.classList.add('hidden'); return; }
+        restartTest();
+        return;
+    }
+    if (testOver) return;
+    if (!gameActive && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        unlockAudio();
+        startGameLogic();
+    }
+    if (!gameActive) return;
+
+    const isTypingKey = e.key.length === 1 || e.key === 'Backspace';
+    const isShortcut = e.ctrlKey || e.metaKey || e.altKey;
+    if (isTypingKey && !isShortcut) { e.preventDefault(); if (e.key.length === 1) playKeySound(); }
+    else if (!isTypingKey) return;
+
+    const currentLetterEl = allLetterElements[currentLetterIndex];
+    if (!currentLetterEl) return;
+
+    if (e.key === 'Backspace') {
+        if (currentLetterIndex > 0) {
+            currentLetterIndex--;
+            const prev = allLetterElements[currentLetterIndex];
+            if (prev.classList.contains('correct') || prev.classList.contains('incorrect')) {
+                typedChars--;
+                if (prev.classList.contains('correct')) correctChars--;
+                if (prev.classList.contains('incorrect')) errors--;
+            }
+            prev.classList.remove('correct', 'incorrect');
+            updateCursor(); updateStats(); updateGuide();
+        }
+        return;
+    }
+    if (e.key.length > 1) return;
+
+    clearTimeout(idleTimer);
+    caret.classList.remove('blinking');
+    idleTimer = setTimeout(() => caret.classList.add('blinking'), 500);
+
+    typedChars++;
+    if (e.key === (currentLetterEl.dataset.char || currentLetterEl.textContent)) {
+        correctChars++;
+        currentLetterEl.classList.add('correct');
+    } else {
+        errors++;
+        currentLetterEl.classList.add('incorrect');
+    }
+    currentLetterIndex++;
+
+    if (testMode === 'words' && currentLetterIndex === allLetterElements.length) { endGame(); return; }
+    updateCursor(); updateStats(); updateGuide();
+});
+
+// --- UI ---
+
+function updateCursor() {
+    const letterEl = allLetterElements[currentLetterIndex];
+    if (letterEl) {
+        const rect = letterEl.getBoundingClientRect();
+        const parentRect = wordStream.getBoundingClientRect();
+        caret.style.height = `${rect.height}px`;
+        caret.style.left = `${rect.left - parentRect.left - 1}px`;
+        caret.style.top = `${rect.top - parentRect.top}px`;
+        caret.style.opacity = '1';
+    } else { caret.style.opacity = '0'; }
+}
+
+function generateKeyboard() {
+    keyboardEl.innerHTML = '';
+    KEYBOARD_LAYOUT.forEach(row => {
+        const rowDiv = document.createElement('div');
+        rowDiv.classList.add('keyboard-row');
+        row.forEach(key => {
+            const keyDiv = document.createElement('div');
+            keyDiv.classList.add('key');
+            keyDiv.textContent = key;
+            keyDiv.dataset.key = key;
+            if (key === 'space') keyDiv.classList.add('space');
+            rowDiv.appendChild(keyDiv);
+        });
+        keyboardEl.appendChild(rowDiv);
+    });
+}
+
+function getFingerTargetCoords(fingerEl, keyEl) {
+    const keyRect = keyEl.getBoundingClientRect();
+    const svgRect = handsSvg.getBoundingClientRect();
+    const fingerRect = fingerEl.getBBox();
+    const targetX = (keyRect.left + keyRect.width / 2) - svgRect.left;
+    const targetY = (keyRect.top + keyRect.height / 2) - svgRect.top;
+    const originX = fingerRect.x + fingerRect.width / 2;
+    const originY = fingerRect.y + 20;
+    return { x: targetX - originX, y: targetY - originY };
+}
+
+function setHomeRowPositions() {
+    Object.keys(HOME_ROW_MAP).forEach(fingerId => {
+        const fingerEl = document.getElementById(fingerId);
+        const keyEl = keyboardEl.querySelector(`.key[data-key="${HOME_ROW_MAP[fingerId]}"]`);
+        if (fingerEl && keyEl) {
+            const coords = getFingerTargetCoords(fingerEl, keyEl);
+            fingerEl._homePos = coords;
+            gsap.to(fingerEl, { x: coords.x, y: coords.y, duration: 0.3, ease: "power2.out" });
+        }
+    });
+}
+
+function resetFingerPositions() {
+    gsap.killTweensOf(".hand g");
+    Object.keys(HOME_ROW_MAP).forEach(id => {
+        const el = document.getElementById(id);
+        if (el) { el.classList.remove('highlight'); gsap.to(el, { x: 0, y: 0, duration: 0.3, ease: "power2.out" }); }
+    });
+}
+
+function updateGuide() {
+    if (activeGuide.key) {
+        activeGuide.key.classList.remove('guide');
+        activeGuide.key.textContent = activeGuide.key.dataset.key;
+        if (activeGuide.key.dataset.key === 'space') activeGuide.key.innerHTML = 'space';
+    }
+    activeGuide.fingers.forEach(f => {
+        f.classList.remove('highlight');
+        if (f._homePos) gsap.to(f, { x: f._homePos.x, y: f._homePos.y, duration: 0.15, ease: "power2.out" });
+    });
+    activeGuide = { fingers: [], key: null };
+
+    const nextLetterEl = allLetterElements[currentLetterIndex];
+    if (!nextLetterEl) return;
+    const char = nextLetterEl.dataset.char || nextLetterEl.textContent;
+    const mapping = KEY_MAP[char];
+    if (!mapping) return;
+    const keyEl = keyboardEl.querySelector(`.key[data-key="${mapping.key}"]`);
+    const fingerEls = Array.isArray(mapping.finger)
+        ? mapping.finger.map(id => document.getElementById(id)).filter(Boolean)
+        : [document.getElementById(mapping.finger)].filter(Boolean);
+    if (!keyEl || fingerEls.length === 0) return;
+    keyEl.classList.add('guide');
+    keyEl.textContent = char;
+    if (char === ' ') keyEl.innerHTML = '&nbsp;';
+    fingerEls.forEach(f => {
+        f.classList.add('highlight');
+        const coords = getFingerTargetCoords(f, keyEl);
+        gsap.to(f, { x: coords.x, y: coords.y, duration: 0.2, ease: "power2.out" });
+    });
+    activeGuide = { fingers: fingerEls, key: keyEl };
+}
+
+function setupControls() {
+    modeOptions.addEventListener('click', (e) => {
+        if (e.target.tagName === 'BUTTON') { unlockAudio(); testMode = e.target.dataset.mode; updateValueOptions(); resetToMenu(); }
+    });
+    valueOptions.addEventListener('click', (e) => {
+        if (e.target.tagName === 'BUTTON') { unlockAudio(); testValue = parseInt(e.target.dataset.value, 10); resetToMenu(); }
+    });
+}
+
+function updateValueOptions() {
+    valueOptions.innerHTML = '';
+    CONFIG[testMode].forEach(val => {
+        const b = document.createElement('button');
+        b.dataset.value = val; b.textContent = val;
+        valueOptions.appendChild(b);
+    });
+    testValue = CONFIG[testMode][0];
+    valueOptions.children[0].classList.add('active');
+    [...modeOptions.children].forEach(b => b.classList.toggle('active', b.dataset.mode === testMode));
+}
+
+function applyTheme(name) { document.body.className = `theme-${name}`; localStorage.setItem('typingTestTheme', name); }
+
+function setupThemeSwitcher() {
+    const saved = localStorage.getItem('typingTestTheme') || 'default';
+    applyTheme(saved);
+    themeSwitcher.addEventListener('click', (e) => { if (e.target.tagName === 'BUTTON') { unlockAudio(); applyTheme(e.target.dataset.theme); } });
+}
+
+function updateTimerDisplay(time, countUp = false) {
+    const s = time % 60;
+    const m = Math.floor(time / 60);
+    timeEl.textContent = `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+}
+
+function updateStats() {
+    const netWpm = Math.floor(correctChars / 5);
+    correctCountEl.textContent = netWpm;
+    typedCountEl.textContent = Math.floor(typedChars / 5);
+    errorsEl.textContent = errors;
+
+    // Progress
+    const total = allLetterElements.length;
+    const pct = total > 0 ? Math.round((currentLetterIndex / total) * 100) : 0;
+    progressEl.textContent = pct + '%';
+}
+
+function calculateResults() {
+    let minutes;
+    if (testMode === 'time') {
+        minutes = testValue / 60;
+    } else {
+        if (!testStartTime) { minutes = 0; }
+        else { minutes = (new Date() - testStartTime) / 60000; }
+    }
+    const rawWpm = minutes > 0 ? (typedChars / 5) / minutes : 0;
+    const netWpm = minutes > 0 ? (correctChars / 5) / minutes : 0;
+    wpmEl.textContent = Math.round(netWpm);
+    rawWpmEl.textContent = Math.round(rawWpm);
+    const acc = typedChars > 0 ? (correctChars / typedChars) * 100 : 0;
+    accuracyEl.textContent = `${acc.toFixed(1)}%`;
+
+    const consistency = computeConsistency();
+    consistencyEl.textContent = consistency !== null ? consistency + '%' : '—';
+}
+
+async function saveResult() {
+    // Cancel any pending "reset button text" timer left over from a previous
+    // save — otherwise it can fire later and overwrite this save's status
+    // message (success/error) with the default "Save Result" text, making it
+    // look like nothing happened.
+    if (saveResetTimer) {
+        clearTimeout(saveResetTimer);
+        saveResetTimer = null;
+    }
+
+    calculateResults();
+    let duration = 0;
+    if (testStartTime) duration = (new Date() - testStartTime) / 1000;
+
+    // Sanitize all values — NaN/Infinity become 0 so JSON stays valid
+    function safe(v) { return isFinite(v) ? v : 0; }
+
+    const result = {
+        wpm: safe(parseInt(wpmEl.textContent, 10)),
+        raw_wpm: safe(parseFloat(rawWpmEl.textContent)),
+        accuracy: safe(parseFloat(accuracyEl.textContent)),
+        errors: safe(parseInt(errorsEl.textContent, 10)),
+        correct: safe(correctChars),
+        typed: safe(typedChars),
+        consistency: safe(computeConsistency() || 0),
+        mode: testMode,
+        value: testValue,
+        duration: safe(duration),
+        client_time: new Date().toISOString()
+    };
+
+    // Disable button while saving to prevent double-submit
+    saveResultBtn.disabled = true;
+    saveResultBtn.textContent = 'Saving…';
+
+    try {
+        const res = await fetch('/api/results', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(result)
+        });
+        if (res.ok) {
+            saveResultBtn.textContent = '✓ Saved!';
+            saveResultBtn.style.background = 'var(--accent)';
+        } else {
+            // Show server-side error message if available
+            let msg = 'Save failed (' + res.status + ')';
+            try { const d = await res.json(); if (d.error) msg = d.error; } catch {}
+            saveResultBtn.textContent = msg;
+            saveResultBtn.style.background = 'var(--error)';
+        }
+    } catch (err) {
+        console.error('Save network error:', err);
+        saveResultBtn.textContent = 'Network error';
+        saveResultBtn.style.background = 'var(--error)';
+    } finally {
+        saveResultBtn.disabled = false;
+        saveResetTimer = setTimeout(() => {
+            saveResultBtn.textContent = 'Save Result';
+            saveResultBtn.style.background = '';
+            saveResetTimer = null;
+        }, 2500);
+    }
+}
+
+function applyLanguage(lang) {
+    currentLang = lang;
+    localStorage.setItem('typingTestLang', lang);
+    const dict = TRANSLATIONS[lang];
+    if (!dict) return;
+    document.querySelectorAll('#langOptions button').forEach(btn => btn.classList.toggle('active', btn.dataset.lang === lang));
+    document.querySelectorAll('[data-translate-key]').forEach(el => { const k = el.dataset.translateKey; if (dict[k]) el.textContent = dict[k]; });
+    document.querySelectorAll('[data-translate-html]').forEach(el => { const k = el.dataset.translateHtml; if (dict[k]) el.innerHTML = dict[k]; });
+    document.querySelectorAll('[data-translate-title-key]').forEach(el => { const k = el.dataset.translateTitleKey; if (dict[k]) el.title = dict[k]; });
+    const timeModeBtn = document.querySelector('#modeOptions button[data-mode="time"]');
+    if (timeModeBtn) timeModeBtn.textContent = dict.modeTime;
+    const wordsModeBtn = document.querySelector('#modeOptions button[data-mode="words"]');
+    if (wordsModeBtn) wordsModeBtn.textContent = dict.modeWords;
+    muteBtn.title = dict.muteTitle;
+}
+
+function setupLanguageSwitcher() {
+    langOptions.addEventListener('click', (e) => {
+        if (e.target.tagName === 'BUTTON') { const lang = e.target.dataset.lang; if (lang) applyLanguage(lang); }
+    });
+}
+
+function setupMuteButton() {
+    muteBtn.addEventListener('click', () => { unlockAudio(); setMuteState(!isMuted); });
+}
+
+async function main() {
+    generateKeyboard();
+    setupThemeSwitcher();
+    setupMuteButton();
+    setupLanguageSwitcher();
+    setupAuthModal();
+    setupStatsModal();
+
+    const savedMuted = localStorage.getItem('typingTestMuted') === 'true';
+    setMuteState(savedMuted);
+    const savedLang = localStorage.getItem('typingTestLang') || 'en';
+    applyLanguage(savedLang);
+
+    await checkSession();
+
+    words = await fetchWords();
+    setupControls();
+    updateValueOptions();
+    resetToMenu();
+
+    restartBtn.addEventListener('click', restartTest);
+    saveResultBtn.addEventListener('click', saveResult);
+    window.addEventListener('resize', () => { if (gameActive) { updateCursor(); setHomeRowPositions(); updateGuide(); } });
+}
+
+main();
+=== File: ./static/index.html ===
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>TypeSprint — Typing Test</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.11.3/gsap.min.js"></script>
+</head>
+<body>
+  <!-- AUTH MODAL -->
+  <div id="authModal" class="modal-overlay hidden">
+    <div class="modal-box">
+      <button class="modal-close" id="authModalClose">✕</button>
+      <div class="modal-tabs">
+        <button class="modal-tab active" data-tab="signin">Sign In</button>
+        <button class="modal-tab" data-tab="signup">Sign Up</button>
+      </div>
+
+      <div id="tabSignin" class="modal-pane active">
+        <h2 class="modal-title">Welcome back</h2>
+        <p class="modal-sub">Sign in to track your progress</p>
+        <div class="modal-field">
+          <label>Username</label>
+          <input type="text" id="siUsername" placeholder="your username" autocomplete="username" />
+        </div>
+        <div class="modal-field">
+          <label>Password</label>
+          <input type="password" id="siPassword" placeholder="••••••••" autocomplete="current-password" />
+        </div>
+        <div id="siError" class="modal-error hidden"></div>
+        <button class="modal-btn" id="siSubmit">Sign In</button>
+      </div>
+
+      <div id="tabSignup" class="modal-pane">
+        <h2 class="modal-title">Create account</h2>
+        <p class="modal-sub">Start tracking your typing journey</p>
+        <div class="modal-field">
+          <label>Username <span class="hint">3–20 chars</span></label>
+          <input type="text" id="suUsername" placeholder="choose a username" autocomplete="username" />
+        </div>
+        <div class="modal-field">
+          <label>Password <span class="hint">min 4 chars</span></label>
+          <input type="password" id="suPassword" placeholder="••••••••" autocomplete="new-password" />
+        </div>
+        <div id="suError" class="modal-error hidden"></div>
+        <button class="modal-btn" id="suSubmit">Create Account</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- STATS MODAL -->
+  <div id="statsModal" class="modal-overlay hidden">
+    <div class="modal-box stats-box">
+      <button class="modal-close" id="statsModalClose">✕</button>
+      <div class="stats-modal-header">
+        <h2 class="modal-title">My Statistics</h2>
+        <span id="statsUsername" class="stats-user-badge"></span>
+      </div>
+
+      <div id="statsContent">
+        <div class="stats-loading">Loading your stats…</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="container">
+    <header>
+      <div class="header-left">
+        <div id="authContainer">
+          <div id="loggedOutBtns">
+            <button id="signUpBtn">Sign Up</button>
+            <button id="signInBtn">Sign In</button>
+          </div>
+          <div id="loggedInBtns" class="hidden">
+            <span id="userBadge" class="user-badge"></span>
+            <button id="statsBtn" title="View Statistics">📊 Stats</button>
+            <button id="signOutBtn">Sign Out</button>
+          </div>
+        </div>
+        <h1>TypeSprint</h1>
+      </div>
+
+      <div class="controls">
+        <div class="control-group">
+          <div class="options" id="langOptions">
+            <button data-lang="en" class="active">EN</button>
+            <button data-lang="uz">UZ</button>
+          </div>
+        </div>
+        <div class="control-group">
+          <div class="label" data-translate-key="mode">Mode:</div>
+          <div class="options" id="modeOptions">
+            <button data-mode="time" class="active">time</button>
+            <button data-mode="words">words</button>
+          </div>
+        </div>
+        <div class="control-group">
+          <div class="label" data-translate-key="count">Count:</div>
+          <div class="options" id="valueOptions">
+            <button data-value="15">15</button>
+            <button data-value="30" class="active">30</button>
+            <button data-value="60">60</button>
+            <button data-value="120">120</button>
+          </div>
+        </div>
+        <button id="muteBtn" title="Mute/Unmute Sound">🔊</button>
+        <button id="restartBtn" title="Restart Test (Esc)" data-translate-title-key="restartTitle">🔄</button>
+      </div>
+    </header>
+
+    <main>
+      <section class="typing-area">
+        <div id="wordStream" class="word-stream" tabindex="0">
+          <div id="caret" class="caret"></div>
+        </div>
+        <input id="input" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
+      </section>
+
+      <aside class="stats">
+        <div class="stat"> <div class="label" data-translate-key="wpm">WPM</div> <div id="wpm" class="value">0</div> </div>
+        <div class="stat"> <div class="label">Raw WPM</div> <div id="rawWpm" class="value">0</div> </div>
+        <div class="stat"> <div class="label" data-translate-key="accuracy">Accuracy</div> <div id="accuracy" class="value">0%</div> </div>
+        <div class="stat"> <div class="label" data-translate-key="time">Time</div> <div id="time" class="value">00:00</div> </div>
+        <div class="stat"> <div class="label" data-translate-key="correct">Correct</div> <div id="correctCount" class="value">0</div> </div>
+        <div class="stat"> <div class="label" data-translate-key="typed">Typed</div> <div id="typedCount" class="value">0</div> </div>
+        <div class="stat"> <div class="label" data-translate-key="errors">Errors</div> <div id="errors" class="value">0</div> </div>
+        <div class="stat"> <div class="label">Consistency</div> <div id="consistency" class="value">—</div> </div>
+        <div class="stat"> <div class="label">Progress</div> <div id="progress" class="value">0%</div> </div>
+        <div class="links">
+          <button id="saveResult" data-translate-key="saveResult">Save Result</button>
+        </div>
+      </aside>
+    </main>
+
+    <div id="typingTutor" class="typing-tutor">
+      <div id="hands" class="hands">
+        <svg viewBox="0 0 1000 300" xmlns="http://www.w3.org/2000/svg" style="overflow: visible;">
+          <g class="hand" id="left-hand">
+            <g id="left-pinky">
+              <path class="finger-fill" d="M366.3,153.6c-2.3-11.4-5.8-31.3-3.6-43.1c2.1-11.4,12-22.3,21.7-25.1c9.7-2.8,22.2-2.1,28.6,8.7c6.4,10.8-1.1,26-5,35.7 c-7.8,19.3-15.1,42.5-19.1,62.1c-4,19.6-5.8,39.3-0.2,58.3c-11.2-19.1-16.3-41.9-12.4-64.8C363.3,176.4,368.6,165.1,366.3,153.6z"/>
+              <path class="finger-outline" d="M366.3,153.6c-2.3-11.4-5.8-31.3-3.6-43.1c2.1-11.4,12-22.3,21.7-25.1c9.7-2.8,22.2-2.1,28.6,8.7c6.4,10.8-1.1,26-5,35.7 c-7.8,19.3-15.1,42.5-19.1,62.1c-4,19.6-5.8,39.3-0.2,58.3c-11.2-19.1-16.3-41.9-12.4-64.8C363.3,176.4,368.6,165.1,366.3,153.6z"/>
+            </g>
+            <g id="left-ring">
+              <path class="finger-fill" d="M407.3,165.8c-1.8-11.4-5.1-31.4-2.8-43.2c2.3-11.8,12.2-22.5,22-25c9.8-2.5,22.3-1.6,28.6,9.4c6.3,11,0,26.4-3.8,36 c-7.5,19-14.2,42.1-18,61.5c-3.8,19.4-5.3,38.9,0.3,57.7c-11.4-18.7-16.7-41.2-12.8-63.5C403.4,188.9,409.1,177.2,407.3,165.8z"/>
+              <path class="finger-outline" d="M407.3,165.8c-1.8-11.4-5.1-31.4-2.8-43.2c2.3-11.8,12.2-22.5,22-25c9.8-2.5,22.3-1.6,28.6,9.4c6.3,11,0,26.4-3.8,36 c-7.5,19-14.2,42.1-18,61.5c-3.8,19.4-5.3,38.9,0.3,57.7c-11.4-18.7-16.7-41.2-12.8-63.5C403.4,188.9,409.1,177.2,407.3,165.8z"/>
+            </g>
+            <g id="left-middle">
+              <path class="finger-fill" d="M447.8,174.5c-1.1-11.2-4-30.8-1.6-42.3c2.4-11.5,12.1-22,21.5-24.5c9.4-2.5,21.5-1.7,27.5,8.9c6,10.6,0.6,25.6-3,35 c-6.9,18.4-13,41-16.6,60c-3.6,19-5,37.9,0.4,56.5c-11.2-18.4-16.3-40.4-12.4-61.9C443.7,197.1,448.9,185.7,447.8,174.5z"/>
+              <path class="finger-outline" d="M447.8,174.5c-1.1-11.2-4-30.8-1.6-42.3c2.4-11.5,12.1-22,21.5-24.5c9.4-2.5,21.5-1.7,27.5,8.9c6,10.6,0.6,25.6-3,35 c-6.9,18.4-13,41-16.6,60c-3.6,19-5,37.9,0.4,56.5c-11.2-18.4-16.3-40.4-12.4-61.9C443.7,197.1,448.9,185.7,447.8,174.5z"/>
+            </g>
+            <g id="left-index">
+              <path class="finger-fill" d="M485.4,183.2c-0.1-11.2-2.5-30.8-0.1-42.3c2.4-11.5,11.8-21.8,20.9-24.1c9.1-2.3,20.8-1.6,26.5,8.7c5.7,10.3,1.3,25-2.2,34 c-6.5,17.4-12,39.3-15.3,57.9c-3.3,18.6-4.5,37,0.7,55c-10.7-18-15.5-39.3-11.8-60C484.2,203.2,485.5,194.4,485.4,183.2z"/>
+              <path class="finger-outline" d="M485.4,183.2c-0.1-11.2-2.5-30.8-0.1-42.3c2.4-11.5,11.8-21.8,20.9-24.1c9.1-2.3,20.8-1.6,26.5,8.7c5.7,10.3,1.3,25-2.2,34 c-6.5,17.4-12,39.3-15.3,57.9c-3.3,18.6-4.5,37,0.7,55c-10.7-18-15.5-39.3-11.8-60C484.2,203.2,485.5,194.4,485.4,183.2z"/>
+            </g>
+            <g id="left-thumb">
+              <path class="finger-fill" d="M470.8,223.5c11.3-1.6,26.2,2.8,33.6,12.7c7.4,9.9,8,22.8-1.5,28.8c-9.5,6-25,0.3-33.3-8.4c-8.3-8.7-9.5-22.1-1.8-31 C475.2,224.2,470.8,223.5,470.8,223.5z"/>
+              <path class="finger-outline" d="M470.8,223.5c11.3-1.6,26.2,2.8,33.6,12.7c7.4,9.9,8,22.8-1.5,28.8c-9.5,6-25,0.3-33.3-8.4c-8.3-8.7-9.5-22.1-1.8-31 C475.2,224.2,470.8,223.5,470.8,223.5z"/>
+            </g>
+          </g>
+          <g class="hand" id="right-hand">
+            <g id="right-pinky">
+              <path class="finger-fill" d="M633.7,153.6c2.3-11.4,5.8-31.3,3.6-43.1c-2.1-11.4-12-22.3-21.7-25.1c-9.7-2.8-22.2-2.1-28.6,8.7c-6.4,10.8,1.1,26,5,35.7 c7.8,19.3,15.1,42.5,19.1,62.1c4,19.6,5.8,39.3,0.2,58.3c11.2-19.1,16.3-41.9,12.4-64.8C636.7,176.4,631.4,165.1,633.7,153.6z"/>
+              <path class="finger-outline" d="M633.7,153.6c2.3-11.4,5.8-31.3,3.6-43.1c-2.1-11.4-12-22.3-21.7-25.1c-9.7-2.8-22.2-2.1-28.6,8.7c-6.4,10.8,1.1,26,5,35.7 c7.8,19.3,15.1,42.5,19.1,62.1c4,19.6,5.8,39.3,0.2,58.3c11.2-19.1,16.3-41.9,12.4-64.8C636.7,176.4,631.4,165.1,633.7,153.6z"/>
+            </g>
+            <g id="right-ring">
+              <path class="finger-fill" d="M592.7,165.8c1.8-11.4,5.1-31.4,2.8-43.2c-2.3-11.8-12.2-22.5-22-25c-9.8-2.5-22.3-1.6-28.6,9.4c-6.3,11,0,26.4,3.8,36 c7.5,19,14.2,42.1,18,61.5c3.8,19.4,5.3,38.9-0.3,57.7c11.4-18.7,16.7-41.2,12.8-63.5C596.6,188.9,590.9,177.2,592.7,165.8z"/>
+              <path class="finger-outline" d="M592.7,165.8c1.8-11.4,5.1-31.4,2.8-43.2c-2.3-11.8-12.2-22.5-22-25c-9.8-2.5-22.3-1.6-28.6,9.4c-6.3,11,0,26.4,3.8,36 c7.5,19,14.2,42.1,18,61.5c3.8,19.4,5.3,38.9-0.3,57.7c11.4-18.7,16.7-41.2,12.8-63.5C596.6,188.9,590.9,177.2,592.7,165.8z"/>
+            </g>
+            <g id="right-middle">
+              <path class="finger-fill" d="M552.2,174.5c1.1-11.2,4-30.8,1.6-42.3c-2.4-11.5-12.1-22-21.5-24.5c-9.4-2.5-21.5-1.7-27.5,8.9c-6,10.6-0.6,25.6,3,35 c6.9,18.4,13,41,16.6,60c3.6,19,5,37.9-0.4,56.5c11.2-18.4,16.3-40.4,12.4-61.9C556.3,197.1,551.1,185.7,552.2,174.5z"/>
+              <path class="finger-outline" d="M552.2,174.5c1.1-11.2,4-30.8,1.6-42.3c-2.4-11.5-12.1-22-21.5-24.5c-9.4-2.5-21.5-1.7-27.5,8.9c-6,10.6-0.6,25.6,3,35 c6.9,18.4,13,41,16.6,60c3.6,19,5,37.9-0.4,56.5c11.2-18.4,16.3-40.4,12.4-61.9C556.3,197.1,551.1,185.7,552.2,174.5z"/>
+            </g>
+            <g id="right-index">
+              <path class="finger-fill" d="M514.6,183.2c0.1-11.2,2.5-30.8,0.1-42.3c-2.4-11.5-11.8-21.8-20.9-24.1c-9.1-2.3-20.8-1.6-26.5,8.7c-5.7,10.3-1.3,25,2.2,34 c6.5,17.4,12,39.3,15.3,57.9c3.3,18.6,4.5,37-0.7,55c10.7-18,15.5-39.3,11.8-60C515.8,203.2,514.5,194.4,514.6,183.2z"/>
+              <path class="finger-outline" d="M514.6,183.2c0.1-11.2,2.5-30.8,0.1-42.3c-2.4-11.5-11.8-21.8-20.9-24.1c-9.1-2.3-20.8-1.6-26.5,8.7c-5.7,10.3-1.3,25,2.2,34 c6.5,17.4,12,39.3,15.3,57.9c3.3,18.6,4.5,37-0.7,55c10.7-18,15.5-39.3,11.8-60C515.8,203.2,514.5,194.4,514.6,183.2z"/>
+            </g>
+            <g id="right-thumb">
+              <path class="finger-fill" d="M529.2,223.5c-11.3-1.6-26.2,2.8-33.6,12.7c-7.4,9.9-8,22.8,1.5,28.8c9.5,6,25,0.3,33.3-8.4c8.3-8.7,9.5-22.1,1.8-31 C524.8,224.2,529.2,223.5,529.2,223.5z"/>
+              <path class="finger-outline" d="M529.2,223.5c-11.3-1.6-26.2,2.8-33.6,12.7c-7.4,9.9-8,22.8,1.5,28.8c9.5,6,25,0.3,33.3-8.4c8.3-8.7,9.5-22.1,1.8-31 C524.8,224.2,529.2,223.5,529.2,223.5z"/>
+            </g>
+          </g>
+        </svg>
+      </div>
+      <div id="keyboard" class="keyboard"></div>
+    </div>
+
+    <footer>
+      <div id="themeSwitcher" class="theme-switcher">
+        <button data-theme="default" title="Default Dark"></button>
+        <button data-theme="olivia" title="Olivia"></button>
+        <button data-theme="serika" title="Serika Dark"></button>
+        <button data-theme="vscode" title="VS Code"></button>
+      </div>
+      <small data-translate-html="restartFooter">Press <kbd>Esc</kbd> to restart</small>
+    </footer>
+  </div>
+
+  <script type="module" src="/static/js/main.js"></script>
+</body>
+</html>
+=== File: ./static/js/main.js ===
+
+import { setupAuthModal, checkSession } from './components/auth.js';
+import { setupStatsModal } from './components/stats.js';
+import { generateKeyboard, setHomeRowPositions, updateGuide } from './components/keyboard.js';
+import { setupUI, updateValueOptions, updateCursor } from './components/ui.js';
+import { initGameEngine, resetToMenu } from './components/game.js';
+import { api } from './api/client.js';
+import { state } from './core/state.js';
+
+async function bootstrap() {
+    // 1. Klaviaturani va asosiy UIni chizish
+    generateKeyboard();
+    setupUI();
+
+    // 2. Modallar (Auth va Stats) va sessiya
+    setupAuthModal();
+    setupStatsModal();
+    await checkSession();
+
+    // 3. So'zlarni serverdan tortish va o'yinni yuklash
+    state.words = await api.fetchWords();
+    updateValueOptions();
+    resetToMenu();
+
+    // 4. Tugma va mantiqlarni ulash (keydown va h.k.)
+    initGameEngine();
+
+    // 5. Ekran o'lchami o'zgarganda kursor va barmoqlarni joyiga tushirish
+    window.addEventListener('resize', () => { 
+        if (state.gameActive) { 
+            updateCursor(); 
+            setHomeRowPositions(); 
+            updateGuide(); 
+        } 
+    });
+}
+
+// Sahifa to'liq yuklangach dasturni ishga tushirish
+document.addEventListener('DOMContentLoaded', bootstrap);
+=== File: ./static/js/api/client.js ===
+
+export const api = {
+    async checkSession() {
+        const res = await fetch('/api/auth/me');
+        if (res.ok) {
+            return await res.json();
+        }
+        throw new Error('Not logged in');
+    },
+
+    async signIn(username, password) {
+        const res = await fetch('/api/auth/signin', {
+            method: 'POST', 
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Sign in failed');
+        return data;
+    },
+
+    async signUp(username, password) {
+        const res = await fetch('/api/auth/signup', {
+            method: 'POST', 
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Sign up failed');
+        return data;
+    },
+
+    async signOut() {
+        await fetch('/api/auth/signout', { method: 'POST' });
+    },
+
+    async getStats() {
+        const res = await fetch('/api/results');
+        if (!res.ok) throw new Error('Could not load stats');
+        return await res.json();
+    },
+
+    async getCalendarDays() {
+        const res = await fetch('/api/results/by-day');
+        if (!res.ok) throw new Error('Could not load calendar');
+        return await res.json();
+    },
+
+    async getDayStats(date) {
+        const res = await fetch(`/api/results/by-day?date=${encodeURIComponent(date)}`);
+        if (!res.ok) throw new Error('Could not load day stats');
+        return await res.json();
+    },
+
+    async saveResult(result) {
+        const res = await fetch('/api/results', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(result)
+        });
+        if (!res.ok) {
+            let msg = 'Save failed (' + res.status + ')';
+            try { 
+                const d = await res.json(); 
+                if (d.error) msg = d.error; 
+            } catch {}
+            throw new Error(msg);
+        }
+        return true;
+    },
+
+    async fetchWords() {
+        try { 
+            const r = await fetch('/api/words'); 
+            return await r.json(); 
+        } catch { 
+            return ["error", "loading", "words"]; 
+        }
+    }
+};
+=== File: ./static/js/components/game.js ===
+
+import { state } from '../core/state.js';
+import { unlockAudio, playKeySound } from '../utils/audio.js';
+import { updateGuide, resetFingerPositions, setHomeRowPositions } from './keyboard.js';
+import { updateCursor, updateStats, updateTimerDisplay, updateValueOptions } from './ui.js';
+import { closeAuthModal } from './auth.js';
+
+export function shuffleArray(a) {
+    for (let i = a.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [a[i], a[j]] = [a[j], a[i]];
+    }
+}
+
+export function populateWordStream() {
+    const wordStream = document.getElementById('wordStream');
+    const caret = document.getElementById('caret');
+    wordStream.innerHTML = ''; 
+    state.allLetterElements = [];
+    shuffleArray(state.words);
+    
+    let toDisplay = state.testMode === 'words' ? state.words.slice(0, state.testValue) : state.words.slice(0, 200);
+    toDisplay.forEach((wordStr, wordIndex) => {
+        const wordDiv = document.createElement('div');
+        wordDiv.classList.add('word');
+        for (const char of wordStr) {
+            const span = document.createElement('span');
+            span.classList.add('letter');
+            span.textContent = char;
+            wordDiv.appendChild(span);
+            state.allLetterElements.push(span);
+        }
+        if (wordIndex < toDisplay.length - 1) {
+            const spaceSpan = document.createElement('span');
+            spaceSpan.classList.add('letter');
+            spaceSpan.innerHTML = '&nbsp;';
+            spaceSpan.dataset.char = ' ';
+            wordDiv.appendChild(spaceSpan);
+            state.allLetterElements.push(spaceSpan);
+        }
+        wordStream.appendChild(wordDiv);
+    });
+    wordStream.appendChild(caret);
+}
+
+export function restartTest() { 
+    unlockAudio(); 
+    resetToMenu(); 
+}
+
+export function resetToMenu() {
+    const wordStream = document.getElementById('wordStream');
+    const caret = document.getElementById('caret');
+    const typingTutor = document.getElementById('typingTutor');
+    
+    state.testOver = false;
+    resetFingerPositions();
+    state.gameActive = false;
+    clearInterval(state.timer);
+    clearTimeout(state.idleTimer);
+    
+    state.currentLetterIndex = 0; state.correctChars = 0; state.typedChars = 0; state.errors = 0;
+    state.testStartTime = null; state.wpmSamples = []; state.lastSampleTime = null;
+    
+    populateWordStream();
+    updateCursor();
+    caret.classList.add('blinking');
+    typingTutor.classList.add('visible');
+    
+    updateStats();
+    calculateResults();
+    
+    if (state.testMode === 'time') { 
+        updateTimerDisplay(state.testValue); 
+    } else { 
+        document.getElementById('time').textContent = '00:00'; 
+    }
+    
+    const valueOptions = document.getElementById('valueOptions');
+    [...valueOptions.children].forEach(btn => btn.classList.toggle('active', parseInt(btn.dataset.value, 10) === state.testValue));
+    
+    wordStream.classList.remove('unfocused');
+    wordStream.focus();
+}
+
+export function startGameLogic() {
+    if (state.gameActive) return;
+    state.gameActive = true;
+    state.testStartTime = new Date();
+    state.lastSampleTime = new Date();
+    state.wpmSamples = [];
+
+    if (state.testMode === 'time') {
+        let timeRemaining = state.testValue;
+        updateTimerDisplay(timeRemaining);
+        state.timer = setInterval(() => {
+            timeRemaining--;
+            updateTimerDisplay(timeRemaining);
+            sampleWPM();
+            if (timeRemaining <= 0) endGame();
+        }, 1000);
+    } else {
+        document.getElementById('time').textContent = '00:00';
+        state.timer = setInterval(() => {
+            if (!state.gameActive) return;
+            const elapsed = Math.floor((new Date() - state.testStartTime) / 1000);
+            updateTimerDisplay(elapsed, true);
+            sampleWPM();
+        }, 1000);
+    }
+    setHomeRowPositions();
+    updateGuide();
+}
+
+export function sampleWPM() {
+    if (!state.testStartTime) return;
+    const now = new Date();
+    const elapsed = (now - state.testStartTime) / 60000;
+    if (elapsed < 0.05) return;
+    const currentWpm = Math.round((state.typedChars / 5) / elapsed);
+    state.wpmSamples.push(currentWpm);
+}
+
+export function computeConsistency() {
+    if (state.wpmSamples.length < 2) return null;
+    const mean = state.wpmSamples.reduce((a, b) => a + b, 0) / state.wpmSamples.length;
+    if (mean === 0) return null;
+    const variance = state.wpmSamples.reduce((acc, v) => acc + Math.pow(v - mean, 2), 0) / state.wpmSamples.length;
+    const stdDev = Math.sqrt(variance);
+    const cv = (stdDev / mean) * 100;
+    return Math.max(0, Math.round(100 - cv));
+}
+
+export function endGame() {
+    const caret = document.getElementById('caret');
+    const typingTutor = document.getElementById('typingTutor');
+
+    state.testOver = true;
+    resetFingerPositions();
+    clearInterval(state.timer);
+    clearTimeout(state.idleTimer);
+    state.gameActive = false;
+    calculateResults();
+    
+    caret.style.opacity = '0';
+    caret.classList.remove('blinking');
+    typingTutor.classList.remove('visible');
+}
+
+export function calculateResults() {
+    let minutes;
+    if (state.testMode === 'time') {
+        minutes = state.testValue / 60;
+    } else {
+        if (!state.testStartTime) { minutes = 0; }
+        else { minutes = (new Date() - state.testStartTime) / 60000; }
+    }
+    
+    const rawWpm = minutes > 0 ? (state.typedChars / 5) / minutes : 0;
+    const netWpm = minutes > 0 ? (state.correctChars / 5) / minutes : 0;
+    
+    document.getElementById('wpm').textContent = Math.round(netWpm);
+    document.getElementById('rawWpm').textContent = Math.round(rawWpm);
+    
+    const acc = state.typedChars > 0 ? (state.correctChars / state.typedChars) * 100 : 0;
+    document.getElementById('accuracy').textContent = `${acc.toFixed(1)}%`;
+
+    const consistency = computeConsistency();
+    document.getElementById('consistency').textContent = consistency !== null ? consistency + '%' : '—';
+}
+
+export function initGameEngine() {
+    document.addEventListener('keydown', (e) => {
+        const activeTag = document.activeElement && document.activeElement.tagName;
+        if (activeTag === 'INPUT' || activeTag === 'TEXTAREA') return;
+
+        const authModal = document.getElementById('authModal');
+        const statsModal = document.getElementById('statsModal');
+        const caret = document.getElementById('caret');
+
+        if (e.key === 'Escape') {
+            if (!authModal.classList.contains('hidden')) { closeAuthModal(); return; }
+            if (!statsModal.classList.contains('hidden')) { statsModal.classList.add('hidden'); return; }
+            restartTest();
+            return;
+        }
+        if (state.testOver) return;
+        if (!state.gameActive && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+            unlockAudio();
+            startGameLogic();
+        }
+        if (!state.gameActive) return;
+
+        const isTypingKey = e.key.length === 1 || e.key === 'Backspace';
+        const isShortcut = e.ctrlKey || e.metaKey || e.altKey;
+        if (isTypingKey && !isShortcut) { e.preventDefault(); if (e.key.length === 1) playKeySound(); }
+        else if (!isTypingKey) return;
+
+        const currentLetterEl = state.allLetterElements[state.currentLetterIndex];
+        if (!currentLetterEl) return;
+
+        if (e.key === 'Backspace') {
+            if (state.currentLetterIndex > 0) {
+                state.currentLetterIndex--;
+                const prev = state.allLetterElements[state.currentLetterIndex];
+                if (prev.classList.contains('correct') || prev.classList.contains('incorrect')) {
+                    state.typedChars--;
+                    if (prev.classList.contains('correct')) state.correctChars--;
+                    if (prev.classList.contains('incorrect')) state.errors--;
+                }
+                prev.classList.remove('correct', 'incorrect');
+                updateCursor(); updateStats(); updateGuide();
+            }
+            return;
+        }
+        if (e.key.length > 1) return;
+
+        clearTimeout(state.idleTimer);
+        caret.classList.remove('blinking');
+        state.idleTimer = setTimeout(() => caret.classList.add('blinking'), 500);
+
+        state.typedChars++;
+        if (e.key === (currentLetterEl.dataset.char || currentLetterEl.textContent)) {
+            state.correctChars++;
+            currentLetterEl.classList.add('correct');
+        } else {
+            state.errors++;
+            currentLetterEl.classList.add('incorrect');
+        }
+        state.currentLetterIndex++;
+
+        if (state.testMode === 'words' && state.currentLetterIndex === state.allLetterElements.length) { endGame(); return; }
+        updateCursor(); updateStats(); updateGuide();
+    });
+
+    document.getElementById('restartBtn').addEventListener('click', restartTest);
+}
+=== File: ./static/js/components/ui.js ===
+
+import { state } from '../core/state.js';
+import { CONFIG, TRANSLATIONS } from '../core/config.js';
+import { unlockAudio, setMuteState } from '../utils/audio.js';
+import { restartTest, resetToMenu, calculateResults, computeConsistency } from './game.js';
+import { api } from '../api/client.js';
+
+export function updateCursor() {
+    const caret = document.getElementById('caret');
+    const wordStream = document.getElementById('wordStream');
+    const letterEl = state.allLetterElements[state.currentLetterIndex];
+    if (letterEl) {
+        const rect = letterEl.getBoundingClientRect();
+        const parentRect = wordStream.getBoundingClientRect();
+        caret.style.height = `${rect.height}px`;
+        caret.style.left = `${rect.left - parentRect.left - 1}px`;
+        caret.style.top = `${rect.top - parentRect.top}px`;
+        caret.style.opacity = '1';
+    } else { 
+        caret.style.opacity = '0'; 
+    }
+}
+
+export function updateTimerDisplay(time, countUp = false) {
+    const timeEl = document.getElementById('time');
+    const s = time % 60;
+    const m = Math.floor(time / 60);
+    timeEl.textContent = `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+}
+
+export function updateStats() {
+    document.getElementById('correctCount').textContent = Math.floor(state.correctChars / 5);
+    document.getElementById('typedCount').textContent = Math.floor(state.typedChars / 5);
+    document.getElementById('errors').textContent = state.errors;
+
+    const total = state.allLetterElements.length;
+    const pct = total > 0 ? Math.round((state.currentLetterIndex / total) * 100) : 0;
+    document.getElementById('progress').textContent = pct + '%';
+}
+
+export function updateValueOptions() {
+    const valueOptions = document.getElementById('valueOptions');
+    const modeOptions = document.getElementById('modeOptions');
+    valueOptions.innerHTML = '';
+    
+    CONFIG[state.testMode].forEach(val => {
+        const b = document.createElement('button');
+        b.dataset.value = val; b.textContent = val;
+        valueOptions.appendChild(b);
+    });
+    
+    state.testValue = CONFIG[state.testMode][0];
+    valueOptions.children[0].classList.add('active');
+    [...modeOptions.children].forEach(b => b.classList.toggle('active', b.dataset.mode === state.testMode));
+}
+
+function setupControls() {
+    document.getElementById('modeOptions').addEventListener('click', (e) => {
+        if (e.target.tagName === 'BUTTON') { 
+            unlockAudio(); 
+            state.testMode = e.target.dataset.mode; 
+            updateValueOptions(); 
+            resetToMenu(); 
+        }
+    });
+    document.getElementById('valueOptions').addEventListener('click', (e) => {
+        if (e.target.tagName === 'BUTTON') { 
+            unlockAudio(); 
+            state.testValue = parseInt(e.target.dataset.value, 10); 
+            resetToMenu(); 
+        }
+    });
+}
+
+function applyTheme(name) { 
+    document.body.className = `theme-${name}`; 
+    localStorage.setItem('typingTestTheme', name); 
+}
+
+function setupThemeSwitcher() {
+    const saved = localStorage.getItem('typingTestTheme') || 'default';
+    applyTheme(saved);
+    document.getElementById('themeSwitcher').addEventListener('click', (e) => { 
+        if (e.target.tagName === 'BUTTON') { 
+            unlockAudio(); 
+            applyTheme(e.target.dataset.theme); 
+        } 
+    });
+}
+
+async function saveResult() {
+    const saveResultBtn = document.getElementById('saveResult');
+
+    if (state.saveResetTimer) {
+        clearTimeout(state.saveResetTimer);
+        state.saveResetTimer = null;
+    }
+
+    calculateResults();
+    let duration = 0;
+    if (state.testStartTime) duration = (new Date() - state.testStartTime) / 1000;
+
+    function safe(v) { return isFinite(v) ? v : 0; }
+
+    const result = {
+        wpm: safe(parseInt(document.getElementById('wpm').textContent, 10)),
+        raw_wpm: safe(parseFloat(document.getElementById('rawWpm').textContent)),
+        accuracy: safe(parseFloat(document.getElementById('accuracy').textContent)),
+        errors: safe(parseInt(document.getElementById('errors').textContent, 10)),
+        correct: safe(state.correctChars),
+        typed: safe(state.typedChars),
+        consistency: safe(computeConsistency() || 0),
+        mode: state.testMode,
+        value: state.testValue,
+        duration: safe(duration),
+        client_time: new Date().toISOString()
+    };
+
+    saveResultBtn.disabled = true;
+    saveResultBtn.textContent = 'Saving…';
+
+    try {
+        await api.saveResult(result);
+        saveResultBtn.textContent = '✓ Saved!';
+        saveResultBtn.style.background = 'var(--accent)';
+    } catch (err) {
+        console.error('Save network error:', err);
+        saveResultBtn.textContent = err.message || 'Network error';
+        saveResultBtn.style.background = 'var(--error)';
+    } finally {
+        saveResultBtn.disabled = false;
+        state.saveResetTimer = setTimeout(() => {
+            saveResultBtn.textContent = 'Save Result';
+            saveResultBtn.style.background = '';
+            state.saveResetTimer = null;
+        }, 2500);
+    }
+}
+
+export function applyLanguage(lang) {
+    state.currentLang = lang;
+    localStorage.setItem('typingTestLang', lang);
+    const dict = TRANSLATIONS[lang];
+    if (!dict) return;
+    document.querySelectorAll('#langOptions button').forEach(btn => btn.classList.toggle('active', btn.dataset.lang === lang));
+    document.querySelectorAll('[data-translate-key]').forEach(el => { const k = el.dataset.translateKey; if (dict[k]) el.textContent = dict[k]; });
+    document.querySelectorAll('[data-translate-html]').forEach(el => { const k = el.dataset.translateHtml; if (dict[k]) el.innerHTML = dict[k]; });
+    document.querySelectorAll('[data-translate-title-key]').forEach(el => { const k = el.dataset.translateTitleKey; if (dict[k]) el.title = dict[k]; });
+    const timeModeBtn = document.querySelector('#modeOptions button[data-mode="time"]');
+    if (timeModeBtn) timeModeBtn.textContent = dict.modeTime;
+    const wordsModeBtn = document.querySelector('#modeOptions button[data-mode="words"]');
+    if (wordsModeBtn) wordsModeBtn.textContent = dict.modeWords;
+    document.getElementById('muteBtn').title = dict.muteTitle;
+}
+
+function setupLanguageSwitcher() {
+    document.getElementById('langOptions').addEventListener('click', (e) => {
+        if (e.target.tagName === 'BUTTON') { 
+            const lang = e.target.dataset.lang; 
+            if (lang) applyLanguage(lang); 
+        }
+    });
+}
+
+function setupMuteButton() {
+    document.getElementById('muteBtn').addEventListener('click', () => { 
+        unlockAudio(); 
+        setMuteState(!state.isMuted); 
+    });
+}
+
+export function setupUI() {
+    setupThemeSwitcher();
+    setupMuteButton();
+    setupLanguageSwitcher();
+    setupControls();
+
+    const savedMuted = localStorage.getItem('typingTestMuted') === 'true';
+    setMuteState(savedMuted);
+    const savedLang = localStorage.getItem('typingTestLang') || 'en';
+    applyLanguage(savedLang);
+
+    document.getElementById('saveResult').addEventListener('click', saveResult);
+}
+=== File: ./static/js/components/auth.js ===
+
+import { api } from '../api/client.js';
+import { state } from '../core/state.js';
+
+const loggedOutBtns = document.getElementById('loggedOutBtns');
+const loggedInBtns = document.getElementById('loggedInBtns');
+const userBadge = document.getElementById('userBadge');
+const authModal = document.getElementById('authModal');
+const authModalClose = document.getElementById('authModalClose');
+
+export async function checkSession() {
+    try {
+        const data = await api.checkSession();
+        setLoggedIn(data.username);
+    } catch { 
+        setLoggedOut(); 
+    }
+}
+
+export function setLoggedIn(username) {
+    state.currentUser = username;
+    userBadge.textContent = username;
+    loggedOutBtns.classList.add('hidden');
+    loggedInBtns.classList.remove('hidden');
+}
+
+export function setLoggedOut() {
+    state.currentUser = null;
+    loggedOutBtns.classList.remove('hidden');
+    loggedInBtns.classList.add('hidden');
+}
+
+export function openAuthModal(tab = 'signin') {
+    authModal.classList.remove('hidden');
+    document.querySelectorAll('.modal-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+    document.querySelectorAll('.modal-pane').forEach(p => p.classList.toggle('active', p.id === `tab${tab.charAt(0).toUpperCase() + tab.slice(1)}`));
+    const input = tab === 'signin' ? document.getElementById('siUsername') : document.getElementById('suUsername');
+    setTimeout(() => input && input.focus(), 50);
+}
+
+export function closeAuthModal() { 
+    authModal.classList.add('hidden'); 
+}
+
+export function setupAuthModal() {
+    document.getElementById('signUpBtn').addEventListener('click', () => openAuthModal('signup'));
+    document.getElementById('signInBtn').addEventListener('click', () => openAuthModal('signin'));
+    authModalClose.addEventListener('click', closeAuthModal);
+    authModal.addEventListener('click', e => { if (e.target === authModal) closeAuthModal(); });
+
+    document.querySelectorAll('.modal-tab').forEach(tab => {
+        tab.addEventListener('click', () => openAuthModal(tab.dataset.tab));
+    });
+
+    // Sign In submit
+    document.getElementById('siSubmit').addEventListener('click', async () => {
+        const username = document.getElementById('siUsername').value.trim();
+        const password = document.getElementById('siPassword').value;
+        const errEl = document.getElementById('siError');
+        errEl.classList.add('hidden');
+        try {
+            const data = await api.signIn(username, password);
+            setLoggedIn(data.username);
+            closeAuthModal();
+        } catch (error) { 
+            errEl.textContent = error.message; 
+            errEl.classList.remove('hidden'); 
+        }
+    });
+
+    // Sign Up submit
+    document.getElementById('suSubmit').addEventListener('click', async () => {
+        const username = document.getElementById('suUsername').value.trim();
+        const password = document.getElementById('suPassword').value;
+        const errEl = document.getElementById('suError');
+        errEl.classList.add('hidden');
+        try {
+            const data = await api.signUp(username, password);
+            setLoggedIn(data.username);
+            closeAuthModal();
+        } catch (error) { 
+            errEl.textContent = error.message; 
+            errEl.classList.remove('hidden'); 
+        }
+    });
+
+    // Enter key in auth fields
+    ['siUsername', 'siPassword'].forEach(id => {
+        document.getElementById(id).addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('siSubmit').click(); });
+    });
+    ['suUsername', 'suPassword'].forEach(id => {
+        document.getElementById(id).addEventListener('keydown', e => { if (e.key === 'Enter') document.getElementById('suSubmit').click(); });
+    });
+
+    document.getElementById('signOutBtn').addEventListener('click', async () => {
+        await api.signOut();
+        setLoggedOut();
+    });
+}
+=== File: ./static/js/components/stats.js ===
+
+import { api } from '../api/client.js';
+import { state } from '../core/state.js';
+
+const statsModal = document.getElementById('statsModal');
+const statsModalClose = document.getElementById('statsModalClose');
+const statsContent = document.getElementById('statsContent');
+const statsUsernameEl = document.getElementById('statsUsername');
+
+let _calendarData  = null;
+let _calendarYear  = null;
+let _calendarMonth = null;
+let _selectedDate  = null;
+let _allStats      = null;
+let _calendarOpen  = false;
+
+export function setupStatsModal() {
+    document.getElementById('statsBtn').addEventListener('click', openStatsModal);
+    statsModalClose.addEventListener('click', closeStatsModal);
+    statsModal.addEventListener('click', e => { if (e.target === statsModal) closeStatsModal(); });
+}
+
+function closeStatsModal() {
+    statsModal.classList.add('hidden');
+    _selectedDate = null;
+    _calendarData = null;
+    _allStats     = null;
+    _calendarOpen = false;
+}
+
+async function openStatsModal() {
+    statsModal.classList.remove('hidden');
+    statsUsernameEl.textContent = state.currentUser;
+    statsContent.innerHTML = '<div class="stats-loading">Loading your stats…</div>';
+
+    try {
+        const [stats, calData] = await Promise.all([
+            api.getStats(),
+            api.getCalendarDays()
+        ]);
+        _allStats     = stats;
+        _calendarData = calData;
+
+        const now = new Date();
+        _calendarYear  = now.getFullYear();
+        _calendarMonth = now.getMonth();
+        _selectedDate  = null;
+        _calendarOpen  = false;
+
+        renderStatsModal(stats);
+    } catch {
+        statsContent.innerHTML = '<div class="stats-loading">Network error.</div>';
+    }
+}
+
+// ─── Main render ──────────────────────────────────────────────────────────────
+
+function renderStatsModal(s) {
+    if (!s || s.tests_completed === 0) {
+        statsContent.innerHTML = `
+          <div class="stats-empty">
+            <div class="stats-empty-icon">⌨️</div>
+            <p>No tests yet! Complete a typing test to see your stats here.</p>
+          </div>`;
+        return;
+    }
+
+    const totalMin    = Math.floor((s.total_time_seconds || 0) / 60);
+    const improvSign  = s.improvement >= 0 ? '+' : '';
+    const improvColor = s.improvement >= 0 ? 'var(--accent)' : 'var(--error)';
+    const wpmData     = s.wpm_history || [];
+    const accData     = s.acc_history || [];
+
+    statsContent.innerHTML = `
+      <!-- ── Summary cards ── -->
+      <div class="sm-grid">
+        <div class="sm-card sm-card--accent">
+          <div class="sm-card-label">Best WPM</div>
+          <div class="sm-card-value">${s.best_wpm}</div>
+        </div>
+        <div class="sm-card">
+          <div class="sm-card-label">Avg WPM</div>
+          <div class="sm-card-value">${s.avg_wpm}</div>
+        </div>
+        <div class="sm-card">
+          <div class="sm-card-label">Best Accuracy</div>
+          <div class="sm-card-value">${s.best_accuracy ? s.best_accuracy.toFixed(1) + '%' : '—'}</div>
+        </div>
+        <div class="sm-card">
+          <div class="sm-card-label">Avg Accuracy</div>
+          <div class="sm-card-value">${s.avg_accuracy}%</div>
+        </div>
+        <div class="sm-card">
+          <div class="sm-card-label">Tests Done</div>
+          <div class="sm-card-value">${s.tests_completed}</div>
+        </div>
+        <div class="sm-card">
+          <div class="sm-card-label">Avg Errors</div>
+          <div class="sm-card-value">${s.avg_errors}</div>
+        </div>
+        <div class="sm-card">
+          <div class="sm-card-label">Time Practiced</div>
+          <div class="sm-card-value">${totalMin}<span class="sm-unit">min</span></div>
+        </div>
+        <div class="sm-card">
+          <div class="sm-card-label">Improvement</div>
+          <div class="sm-card-value" style="color:${improvColor}">${improvSign}${s.improvement}<span class="sm-unit">wpm</span></div>
+        </div>
+      </div>
+
+      <!-- ── Sparklines ── -->
+      ${wpmData.length > 1 ? `
+      <div class="sm-chart-section">
+        <div class="sm-chart-title">WPM over last ${wpmData.length} tests</div>
+        <canvas id="wpmChart" class="sm-canvas"></canvas>
+      </div>
+      <div class="sm-chart-section">
+        <div class="sm-chart-title">Accuracy over last ${accData.length} tests</div>
+        <canvas id="accChart" class="sm-canvas"></canvas>
+      </div>
+      ` : ''}
+
+      <!-- ── Calendar toggle button ── -->
+      <div class="sm-cal-toggle-row">
+        <button class="sm-cal-toggle-btn" id="calToggleBtn">
+          📅 Activity Calendar
+        </button>
+      </div>
+
+      <!-- ── Calendar panel (hidden by default) ── -->
+      <div class="sm-calendar-section hidden" id="calendarSection">
+        <div class="sm-calendar-header">
+          <div class="sm-cal-nav">
+            <button class="sm-cal-arrow" id="calPrev">‹</button>
+            <span id="calMonthLabel" class="sm-cal-month-label"></span>
+            <button class="sm-cal-arrow" id="calNext">›</button>
+          </div>
+        </div>
+        <div id="calGrid" class="sm-cal-grid"></div>
+      </div>
+
+      <!-- ── Recent tests / day detail ── -->
+      <div id="sm-day-detail" class="sm-history-section"></div>
+    `;
+
+    if (wpmData.length > 1) {
+        drawLineChart('wpmChart', wpmData, 'var(--accent)');
+        drawLineChart('accChart', accData, 'var(--caret)', true);
+    }
+
+    // Toggle button
+    document.getElementById('calToggleBtn').addEventListener('click', () => {
+        _calendarOpen = !_calendarOpen;
+        const section = document.getElementById('calendarSection');
+        const btn     = document.getElementById('calToggleBtn');
+        section.classList.toggle('hidden', !_calendarOpen);
+        btn.classList.toggle('sm-cal-toggle-btn--active', _calendarOpen);
+        btn.textContent = _calendarOpen ? '📅 Activity Calendar ▲' : '📅 Activity Calendar';
+        if (_calendarOpen) renderCalendar();
+    });
+
+    // Calendar nav
+    document.getElementById('calPrev').addEventListener('click', () => {
+        _calendarMonth--;
+        if (_calendarMonth < 0) { _calendarMonth = 11; _calendarYear--; }
+        renderCalendar();
+    });
+    document.getElementById('calNext').addEventListener('click', () => {
+        _calendarMonth++;
+        if (_calendarMonth > 11) { _calendarMonth = 0; _calendarYear++; }
+        renderCalendar();
+    });
+
+    renderDayDetail(null);
+}
+
+// ─── Calendar grid ────────────────────────────────────────────────────────────
+
+function renderCalendar() {
+    const label = document.getElementById('calMonthLabel');
+    const grid  = document.getElementById('calGrid');
+    if (!label || !grid) return;
+
+    const monthNames = ['January','February','March','April','May','June',
+                        'July','August','September','October','November','December'];
+    label.textContent = `${monthNames[_calendarMonth]} ${_calendarYear}`;
+
+    const activeDays = new Set();
+    const dayInfoMap = {};
+    if (_calendarData && _calendarData.days) {
+        _calendarData.days.forEach(d => {
+            activeDays.add(d.date);
+            dayInfoMap[d.date] = d;
+        });
+    }
+
+    const dayLabels = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    let html = '<div class="sm-cal-dow-row">';
+    dayLabels.forEach(d => { html += `<div class="sm-cal-dow">${d}</div>`; });
+    html += '</div><div class="sm-cal-days">';
+
+    const firstDay    = new Date(_calendarYear, _calendarMonth, 1).getDay();
+    const daysInMonth = new Date(_calendarYear, _calendarMonth + 1, 0).getDate();
+    const today       = new Date().toISOString().slice(0, 10);
+
+    for (let i = 0; i < firstDay; i++) {
+        html += '<div class="sm-cal-cell sm-cal-empty"></div>';
+    }
+
+    for (let day = 1; day <= daysInMonth; day++) {
+        const dateStr    = `${_calendarYear}-${String(_calendarMonth + 1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+        const isActive   = activeDays.has(dateStr);
+        const isSelected = _selectedDate === dateStr;
+        const isToday    = dateStr === today;
+        const info       = dayInfoMap[dateStr];
+        const intensity  = info ? Math.min(info.count, 5) : 0;
+
+        let cls = 'sm-cal-cell';
+        if (isActive)   cls += ' sm-cal-active';
+        if (isSelected) cls += ' sm-cal-selected';
+        if (isToday)    cls += ' sm-cal-today';
+
+        const tooltip = info
+            ? `title="${info.count} test${info.count > 1 ? 's' : ''} · Best ${info.best_wpm} WPM · ${info.avg_acc.toFixed(1)}% acc"`
+            : '';
+
+        html += `<div class="${cls}" data-date="${dateStr}" ${tooltip} data-intensity="${intensity}">
+          <span class="sm-cal-day-num">${day}</span>
+          ${isActive ? `<span class="sm-cal-dot" style="--dot-intensity:${intensity}"></span>` : ''}
+        </div>`;
+    }
+
+    html += '</div>';
+    grid.innerHTML = html;
+
+    grid.querySelectorAll('.sm-cal-cell:not(.sm-cal-empty)').forEach(cell => {
+        cell.addEventListener('click', () => {
+            const date = cell.dataset.date;
+            if (_selectedDate === date) {
+                _selectedDate = null;
+                renderCalendar();
+                renderDayDetail(null);
+            } else {
+                _selectedDate = date;
+                renderCalendar();
+                if (cell.classList.contains('sm-cal-active')) {
+                    loadAndRenderDay(date);
+                } else {
+                    renderDayDetail(date, null, []);
+                }
+            }
+        });
+    });
+}
+
+// ─── Day detail panel ─────────────────────────────────────────────────────────
+
+async function loadAndRenderDay(date) {
+    const panel = document.getElementById('sm-day-detail');
+    panel.innerHTML = '<div class="stats-loading">Loading…</div>';
+    try {
+        const data = await api.getDayStats(date);
+        renderDayDetail(date, data.day_summary, data.day_results || []);
+    } catch {
+        panel.innerHTML = '<div class="stats-loading">Could not load day data.</div>';
+    }
+}
+
+function renderDayDetail(date, summary, results) {
+    const panel = document.getElementById('sm-day-detail');
+    if (!panel) return;
+
+    if (!date) {
+        const recent = (_allStats && _allStats.recent_results) || [];
+        panel.innerHTML = `
+          <div class="sm-chart-title">Recent Tests <span class="sm-cal-clear-hint">${_calendarOpen ? '(click a highlighted day to filter)' : ''}</span></div>
+          ${buildResultsTable(recent)}
+        `;
+        return;
+    }
+
+    const friendlyDate = new Date(date + 'T00:00:00').toLocaleDateString(undefined, {
+        weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+    });
+
+    const s = summary || {};
+    panel.innerHTML = `
+      <div class="sm-day-header">
+        <div class="sm-chart-title">${friendlyDate}</div>
+        <button class="sm-cal-clear-btn" id="clearDayFilter">✕ Show all</button>
+      </div>
+      ${s.count ? `
+      <div class="sm-day-summary-row">
+        <div class="sm-day-chip"><span class="sm-day-chip-label">Tests</span><span class="sm-day-chip-val">${s.count}</span></div>
+        <div class="sm-day-chip"><span class="sm-day-chip-label">Best WPM</span><span class="sm-day-chip-val sm-chip-accent">${s.best_wpm}</span></div>
+        <div class="sm-day-chip"><span class="sm-day-chip-label">Avg WPM</span><span class="sm-day-chip-val">${s.avg_wpm}</span></div>
+        <div class="sm-day-chip"><span class="sm-day-chip-label">Avg Acc</span><span class="sm-day-chip-val">${s.avg_acc ? s.avg_acc.toFixed(1) + '%' : '—'}</span></div>
+        <div class="sm-day-chip"><span class="sm-day-chip-label">Total Errors</span><span class="sm-day-chip-val sm-chip-err">${s.total_errors}</span></div>
+      </div>
+      ` : ''}
+      <div class="sm-chart-title" style="margin-top:12px">Tests on this day</div>
+      ${buildResultsTable(results)}
+    `;
+
+    document.getElementById('clearDayFilter').addEventListener('click', () => {
+        _selectedDate = null;
+        renderCalendar();
+        renderDayDetail(null);
+    });
+}
+
+function buildResultsTable(rows) {
+    if (!rows || rows.length === 0) {
+        return '<p class="sm-no-results">No tests found.</p>';
+    }
+    return `
+      <div class="sm-table-wrap">
+        <table class="sm-table">
+          <thead><tr><th>WPM</th><th>Raw</th><th>Acc</th><th>Errors</th><th>Mode</th><th>Time</th></tr></thead>
+          <tbody>
+            ${rows.map(r => `
+              <tr>
+                <td class="td-wpm">${r.wpm}</td>
+                <td class="td-muted">${r.raw_wpm ? Math.round(r.raw_wpm) : '—'}</td>
+                <td class="${r.accuracy >= 97 ? 'td-good' : r.accuracy >= 90 ? 'td-ok' : 'td-bad'}">${r.accuracy ? r.accuracy.toFixed(1) + '%' : '—'}</td>
+                <td class="td-muted">${r.errors}</td>
+                <td class="td-muted">${r.mode} ${r.value}</td>
+                <td class="td-muted">${r.client_time ? new Date(r.client_time).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '—'}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+}
+
+// ─── Sparkline chart ──────────────────────────────────────────────────────────
+
+function drawLineChart(canvasId, data, color, isPercent = false) {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) return;
+    const dpr = window.devicePixelRatio || 1;
+    const W = canvas.offsetWidth || 500;
+    const H = 100;
+    canvas.width = W * dpr;
+    canvas.height = H * dpr;
+    canvas.style.width = W + 'px';
+    canvas.style.height = H + 'px';
+    const ctx = canvas.getContext('2d');
+    ctx.scale(dpr, dpr);
+
+    const pad = { t: 10, b: 20, l: 32, r: 10 };
+    const chartW = W - pad.l - pad.r;
+    const chartH = H - pad.t - pad.b;
+    const min = Math.max(0, Math.min(...data) - 5);
+    const max = Math.max(...data) + 5;
+
+    ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+    ctx.lineWidth = 1;
+    [0, 0.5, 1].forEach(frac => {
+        const y = pad.t + chartH * (1 - frac);
+        ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(pad.l + chartW, y); ctx.stroke();
+        const val = isPercent ? (min + (max - min) * frac).toFixed(0) + '%' : Math.round(min + (max - min) * frac);
+        ctx.fillStyle = 'rgba(255,255,255,0.3)';
+        ctx.font = '10px Inter, sans-serif';
+        ctx.textAlign = 'right';
+        ctx.fillText(val, pad.l - 4, y + 3);
+    });
+
+    const pts = data.map((v, i) => ({
+        x: pad.l + (i / (data.length - 1)) * chartW,
+        y: pad.t + chartH * (1 - (v - min) / (max - min))
+    }));
+
+    const grad = ctx.createLinearGradient(0, pad.t, 0, pad.t + chartH);
+    const stopColor = color.includes('caret') ? 'rgba(99,102,241,0.25)' : 'rgba(34,197,94,0.25)';
+    grad.addColorStop(0, stopColor);
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pad.t + chartH);
+    pts.forEach(p => ctx.lineTo(p.x, p.y));
+    ctx.lineTo(pts[pts.length - 1].x, pad.t + chartH);
+    ctx.closePath();
+    ctx.fillStyle = grad;
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    pts.forEach(p => ctx.lineTo(p.x, p.y));
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.lineJoin = 'round';
+    ctx.stroke();
+
+    const last = pts[pts.length - 1];
+    ctx.beginPath();
+    ctx.arc(last.x, last.y, 3, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.fill();
+}
+=== File: ./static/js/components/keyboard.js ===
+
+import { KEYBOARD_LAYOUT, HOME_ROW_MAP, KEY_MAP } from '../core/config.js';
+import { state } from '../core/state.js';
+
+export function generateKeyboard() {
+    const keyboardEl = document.getElementById('keyboard');
+    keyboardEl.innerHTML = '';
+    KEYBOARD_LAYOUT.forEach(row => {
+        const rowDiv = document.createElement('div');
+        rowDiv.classList.add('keyboard-row');
+        row.forEach(key => {
+            const keyDiv = document.createElement('div');
+            keyDiv.classList.add('key');
+            keyDiv.textContent = key;
+            keyDiv.dataset.key = key;
+            if (key === 'space') keyDiv.classList.add('space');
+            rowDiv.appendChild(keyDiv);
+        });
+        keyboardEl.appendChild(rowDiv);
+    });
+}
+
+export function getFingerTargetCoords(fingerEl, keyEl) {
+    const handsSvg = document.querySelector('#hands svg');
+    const keyRect = keyEl.getBoundingClientRect();
+    const svgRect = handsSvg.getBoundingClientRect();
+    const fingerRect = fingerEl.getBBox();
+    const targetX = (keyRect.left + keyRect.width / 2) - svgRect.left;
+    const targetY = (keyRect.top + keyRect.height / 2) - svgRect.top;
+    const originX = fingerRect.x + fingerRect.width / 2;
+    const originY = fingerRect.y + 20;
+    return { x: targetX - originX, y: targetY - originY };
+}
+
+export function setHomeRowPositions() {
+    const keyboardEl = document.getElementById('keyboard');
+    Object.keys(HOME_ROW_MAP).forEach(fingerId => {
+        const fingerEl = document.getElementById(fingerId);
+        const keyEl = keyboardEl.querySelector(`.key[data-key="${HOME_ROW_MAP[fingerId]}"]`);
+        if (fingerEl && keyEl) {
+            const coords = getFingerTargetCoords(fingerEl, keyEl);
+            fingerEl._homePos = coords;
+            gsap.to(fingerEl, { x: coords.x, y: coords.y, duration: 0.3, ease: "power2.out" });
+        }
+    });
+}
+
+export function resetFingerPositions() {
+    gsap.killTweensOf(".hand g");
+    Object.keys(HOME_ROW_MAP).forEach(id => {
+        const el = document.getElementById(id);
+        if (el) { el.classList.remove('highlight'); gsap.to(el, { x: 0, y: 0, duration: 0.3, ease: "power2.out" }); }
+    });
+}
+
+export function updateGuide() {
+    const keyboardEl = document.getElementById('keyboard');
+
+    if (state.activeGuide.key) {
+        state.activeGuide.key.classList.remove('guide');
+        state.activeGuide.key.textContent = state.activeGuide.key.dataset.key;
+        if (state.activeGuide.key.dataset.key === 'space') state.activeGuide.key.innerHTML = 'space';
+    }
+    state.activeGuide.fingers.forEach(f => {
+        f.classList.remove('highlight');
+        if (f._homePos) gsap.to(f, { x: f._homePos.x, y: f._homePos.y, duration: 0.15, ease: "power2.out" });
+    });
+    state.activeGuide = { fingers: [], key: null };
+
+    const nextLetterEl = state.allLetterElements[state.currentLetterIndex];
+    if (!nextLetterEl) return;
+    const char = nextLetterEl.dataset.char || nextLetterEl.textContent;
+    const mapping = KEY_MAP[char];
+    if (!mapping) return;
+    
+    const keyEl = keyboardEl.querySelector(`.key[data-key="${mapping.key}"]`);
+    const fingerEls = Array.isArray(mapping.finger)
+        ? mapping.finger.map(id => document.getElementById(id)).filter(Boolean)
+        : [document.getElementById(mapping.finger)].filter(Boolean);
+        
+    if (!keyEl || fingerEls.length === 0) return;
+    
+    keyEl.classList.add('guide');
+    keyEl.textContent = char;
+    if (char === ' ') keyEl.innerHTML = '&nbsp;';
+    
+    fingerEls.forEach(f => {
+        f.classList.add('highlight');
+        const coords = getFingerTargetCoords(f, keyEl);
+        gsap.to(f, { x: coords.x, y: coords.y, duration: 0.2, ease: "power2.out" });
+    });
+    
+    state.activeGuide = { fingers: fingerEls, key: keyEl };
+}
+=== File: ./static/js/utils/audio.js ===
+
+import { state } from '../core/state.js';
+
+const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+let isAudioUnlocked = false;
+
+export function setMuteState(muted) {
+    state.isMuted = muted;
+    document.getElementById('muteBtn').textContent = muted ? '🔇' : '🔊';
+    localStorage.setItem('typingTestMuted', state.isMuted);
+}
+
+export function playKeySound() {
+    if (state.isMuted || !isAudioUnlocked) return;
+    const now = audioContext.currentTime;
+    const osc = audioContext.createOscillator();
+    const gain = audioContext.createGain();
+    osc.connect(gain); gain.connect(audioContext.destination);
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(180, now);
+    osc.frequency.exponentialRampToValueAtTime(80, now + 0.1);
+    gain.gain.setValueAtTime(1.2, now);
+    gain.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
+    osc.start(now); osc.stop(now + 0.12);
+}
+
+export function unlockAudio() {
+    if (isAudioUnlocked) return;
+    if (audioContext.state === 'suspended') audioContext.resume();
+    const osc = audioContext.createOscillator();
+    const g = audioContext.createGain();
+    osc.connect(g); g.connect(audioContext.destination);
+    g.gain.value = 0; osc.start(0); osc.stop(0.001);
+    isAudioUnlocked = true;
+}
+=== File: ./static/js/core/state.js ===
+
+export const state = {
+    words: [],
+    allLetterElements: [],
+    currentLetterIndex: 0,
+    correctChars: 0,
+    typedChars: 0,
+    errors: 0,
+    timer: null,
+    idleTimer: null,
+    gameActive: false,
+    testOver: false,
+    testMode: 'time',
+    testValue: 30,
+    testStartTime: null,
+    activeGuide: { fingers: [], key: null },
+    isMuted: false,
+    currentLang: 'en',
+    currentUser: null,
+    wpmSamples: [],
+    lastSampleTime: null,
+    saveResetTimer: null
+};
+=== File: ./static/js/core/config.js ===
+
+export const CONFIG = { time: [15, 30, 60, 120], words: [10, 25, 50, 100] };
+
+export const KEY_MAP = {
+    '`': { key: '`', finger: 'left-pinky' }, '~': { key: '`', finger: 'left-pinky' }, '1': { key: '1', finger: 'left-pinky' }, '!': { key: '1', finger: 'left-pinky' },
+    '2': { key: '2', finger: 'left-ring' }, '@': { key: '2', finger: 'left-ring' }, '3': { key: '3', finger: 'left-middle' }, '#': { key: '3', finger: 'left-middle' },
+    '4': { key: '4', finger: 'left-index' }, '$': { key: '4', finger: 'left-index' }, '5': { key: '5', finger: 'left-index' }, '%': { key: '5', finger: 'left-index' },
+    '6': { key: '6', finger: 'right-index' }, '^': { key: '6', finger: 'right-index' }, '7': { key: '7', finger: 'right-index' }, '&': { key: '7', finger: 'right-index' },
+    '8': { key: '8', finger: 'right-middle' }, '*': { key: '8', finger: 'right-middle' }, '9': { key: '9', finger: 'right-ring' }, '(': { key: '9', finger: 'right-ring' },
+    '0': { key: '0', finger: 'right-pinky' }, ')': { key: '0', finger: 'right-pinky' }, '-': { key: '-', finger: 'right-pinky' }, '_': { key: '-', finger: 'right-pinky' },
+    '=': { key: '=', finger: 'right-pinky' }, '+': { key: '=', finger: 'right-pinky' }, 'q': { key: 'q', finger: 'left-pinky' }, 'Q': { key: 'q', finger: 'left-pinky' },
+    'w': { key: 'w', finger: 'left-ring' }, 'W': { key: 'w', finger: 'left-ring' }, 'e': { key: 'e', finger: 'left-middle' }, 'E': { key: 'e', finger: 'left-middle' },
+    'r': { key: 'r', finger: 'left-index' }, 'R': { key: 'r', finger: 'left-index' }, 't': { key: 't', finger: 'left-index' }, 'T': { key: 't', finger: 'left-index' },
+    'y': { key: 'y', finger: 'right-index' }, 'Y': { key: 'y', finger: 'right-index' }, 'u': { key: 'u', finger: 'right-index' }, 'U': { key: 'u', finger: 'right-index' },
+    'i': { key: 'i', finger: 'right-middle' }, 'I': { key: 'i', finger: 'right-middle' }, 'o': { key: 'o', finger: 'right-ring' }, 'O': { key: 'o', finger: 'right-ring' },
+    'p': { key: 'p', finger: 'right-pinky' }, 'P': { key: 'p', finger: 'right-pinky' }, '[': { key: '[', finger: 'right-pinky' }, '{': { key: '[', finger: 'right-pinky' },
+    ']': { key: ']', finger: 'right-pinky' }, '}': { key: ']', finger: 'right-pinky' }, '\\': { key: '\\', finger: 'right-pinky' }, '|': { key: '\\', finger: 'right-pinky' },
+    'a': { key: 'a', finger: 'left-pinky' }, 'A': { key: 'a', finger: 'left-pinky' }, 's': { key: 's', finger: 'left-ring' }, 'S': { key: 's', finger: 'left-ring' },
+    'd': { key: 'd', finger: 'left-middle' }, 'D': { key: 'd', finger: 'left-middle' }, 'f': { key: 'f', finger: 'left-index' }, 'F': { key: 'f', finger: 'left-index' },
+    'g': { key: 'g', finger: 'left-index' }, 'G': { key: 'g', finger: 'left-index' }, 'h': { key: 'h', finger: 'right-index' }, 'H': { key: 'h', finger: 'right-index' },
+    'j': { key: 'j', finger: 'right-index' }, 'J': { key: 'j', finger: 'right-index' }, 'k': { key: 'k', finger: 'right-middle' }, 'K': { key: 'k', finger: 'right-middle' },
+    'l': { key: 'l', finger: 'right-ring' }, 'L': { key: 'l', finger: 'right-ring' }, ';': { key: ';', finger: 'right-pinky' }, ':': { key: ';', finger: 'right-pinky' },
+    '\'': { key: '\'', finger: 'right-pinky' }, '"': { key: '\'', finger: 'right-pinky' }, 'z': { key: 'z', finger: 'left-pinky' }, 'Z': { key: 'z', finger: 'left-pinky' },
+    'x': { key: 'x', finger: 'left-ring' }, 'X': { key: 'x', finger: 'left-ring' }, 'c': { key: 'c', finger: 'left-middle' }, 'C': { key: 'c', finger: 'left-middle' },
+    'v': { key: 'v', finger: 'left-index' }, 'V': { key: 'v', finger: 'left-index' }, 'b': { key: 'b', finger: 'left-index' }, 'B': { key: 'b', finger: 'left-index' },
+    'n': { key: 'n', finger: 'right-index' }, 'N': { key: 'n', finger: 'right-index' }, 'm': { key: 'm', finger: 'right-index' }, 'M': { key: 'm', finger: 'right-index' },
+    ',': { key: ',', finger: 'right-middle' }, '<': { key: ',', finger: 'right-middle' }, '.': { key: '.', finger: 'right-ring' }, '>': { key: '.', finger: 'right-ring' },
+    '/': { key: '/', finger: 'right-pinky' }, '?': { key: '/', finger: 'right-pinky' }, ' ': { key: 'space', finger: ['left-thumb', 'right-thumb'] }
+};
+
+export const KEYBOARD_LAYOUT = [
+    ['`','1','2','3','4','5','6','7','8','9','0','-','='],
+    ['q','w','e','r','t','y','u','i','o','p','[',']','\\'],
+    ['a','s','d','f','g','h','j','k','l',';','\''],
+    ['z','x','c','v','b','n','m',',','.','/'],
+    ['space']
+];
+
+export const HOME_ROW_MAP = {
+    'left-pinky': 'a', 'left-ring': 's', 'left-middle': 'd', 'left-index': 'f',
+    'right-index': 'j', 'right-middle': 'k', 'right-ring': 'l', 'right-pinky': ';',
+    'left-thumb': 'space', 'right-thumb': 'space'
+};
+
+export const TRANSLATIONS = {
+    en: {
+        mode: 'Mode:', count: 'Count:', wpm: 'WPM', accuracy: 'Accuracy',
+        time: 'Time', correct: 'Correct', typed: 'Typed', errors: 'Errors',
+        saveResult: 'Save Result', restartTitle: 'Restart Test (Esc)',
+        restartFooter: 'Press <kbd>Esc</kbd> to restart', muteTitle: 'Mute/Unmute Sound',
+        modeTime: 'time', modeWords: 'words'
+    },
+    uz: {
+        mode: 'Rejim:', count: 'Soni:', wpm: 'Tezlik', accuracy: 'Aniqlik',
+        time: 'Vaqt', correct: "To'g'ri", typed: 'Yozildi', errors: 'Xatolar',
+        saveResult: 'Natijani Saqlash', restartTitle: "Qayta Boshlash (Esc)",
+        restartFooter: "Qayta boshlash uchun <kbd>Esc</kbd> bosing", muteTitle: "Ovozsiz/Ovozli",
+        modeTime: 'vaqt', modeWords: "so'zlar"
+    }
+};
+=== File: ./main.go ===
+
+// main.go
+package main
+
+import (
+	"fmt"
+	"log"
+	"net/http"
+	"os"
+
+	"typesprint/internal/handlers"
+	"typesprint/internal/middleware"
+	"typesprint/internal/store"
+)
+
+func main() {
+	// Initialize data folders and memory maps
+	os.MkdirAll("./data", 0755)
+	store.LoadData()
+
+	// Static file serving
+	fs := http.FileServer(http.Dir("./static"))
+	http.Handle("/static/", http.StripPrefix("/static/", fs))
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, "./static/index.html")
+	})
+
+	// API Routing
+	http.HandleFunc("/api/words", middleware.WithMiddleware(handlers.WordsHandler))
+	http.HandleFunc("/api/results", middleware.WithMiddleware(handlers.ResultsHandler))
+	http.HandleFunc("/api/results/by-day", middleware.WithMiddleware(handlers.CalendarHandler))
+	http.HandleFunc("/api/auth/signup", middleware.WithMiddleware(handlers.SignupHandler))
+	http.HandleFunc("/api/auth/signin", middleware.WithMiddleware(handlers.SigninHandler))
+	http.HandleFunc("/api/auth/signout", middleware.WithMiddleware(handlers.SignoutHandler))
+	http.HandleFunc("/api/auth/me", middleware.WithMiddleware(handlers.MeHandler))
+
+	port := "8082"
+	fmt.Printf("TypeSprint running on http://localhost:%s\n", port)
+	log.Fatal(http.ListenAndServe(":"+port, nil))
+}
+=== File: ./styles.css ===
+
+/* styles.css — TypeSprint */
+
+:root {
+  --bg: #0f1724; --panel: #0b1220; --accent: #22c55e; --muted: #94a3b8;
+  --text: #e6eef8; --error: #ef4444; --caret: #6366f1;
+  --key-bg: rgba(255, 255, 255, 0.05);
+  --key-text: var(--muted);
+  --key-guide-bg: rgba(99, 102, 241, 0.2);
+  --key-guide-glow: #6366f1;
+  --finger-highlight: var(--accent);
+  --border: rgba(255,255,255,0.06);
+}
+body.theme-olivia {
+  --bg: #1A1D2A; --panel: #151724; --text: #DEE0E4; --muted: #6B6F7C;
+  --accent: #A9DC76; --error: #FF6188; --caret: #78DCE8;
+  --key-bg: #212433; --key-guide-bg: rgba(120, 220, 232, 0.2); --key-guide-glow: #78DCE8; --finger-highlight: #78DCE8;
+}
+body.theme-serika {
+  --bg: #323437; --panel: #2C2E31; --text: #E2B714; --muted: #646669;
+  --accent: #D1D0C5; --error: #CA4754; --caret: #E2B714;
+  --key-bg: #414447; --key-guide-bg: rgba(226, 183, 20, 0.2); --key-guide-glow: #E2B714; --finger-highlight: #E2B714;
+}
+body.theme-vscode {
+  --bg: #1e1e1e; --panel: #252526; --text: #d4d4d4; --muted: #808080;
+  --accent: #4ec9b0; --error: #f44747; --caret: #aeafad;
+  --key-bg: #333333; --key-guide-bg: rgba(86, 156, 214, 0.2); --key-guide-glow: #569cd6; --finger-highlight: #569cd6;
+}
+
+* { box-sizing: border-box; font-family: 'Courier New', Courier, monospace; }
+html, body { height: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  display: flex; align-items: center; justify-content: center;
+  min-height: 100vh; padding: 20px;
+  transition: background 0.3s, color 0.3s;
+}
+.hidden { display: none !important; }
+
+/* ===================== CONTAINER ===================== */
+.container {
+  width: 100%; max-width: 1000px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.02), transparent);
+  border-radius: 12px; padding: 18px;
+  box-shadow: 0 10px 30px rgba(2,6,23,0.6);
+}
+
+/* ===================== HEADER ===================== */
+header {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; margin-bottom: 12px;
+}
+.header-left { display: flex; align-items: center; gap: 24px; }
+header h1 { margin: 0; font-size: 1.35rem; letter-spacing: 0.5px; }
+
+#authContainer { display: flex; align-items: center; gap: 8px; }
+#loggedOutBtns, #loggedInBtns { display: flex; align-items: center; gap: 8px; }
+
+#loggedOutBtns button, #loggedInBtns button {
+  padding: 6px 14px; border-radius: 6px; border: 1px solid transparent;
+  background: var(--key-bg); color: var(--muted); cursor: pointer;
+  transition: all 0.2s; font-family: Inter, sans-serif; font-size: 0.85rem;
+}
+#loggedOutBtns button:hover, #loggedInBtns button:hover {
+  color: var(--text); border-color: var(--accent);
+}
+#signUpBtn { border-color: var(--accent); color: var(--accent); }
+#signUpBtn:hover { background: rgba(34, 197, 94, 0.1); }
+
+.user-badge {
+  font-family: Inter, sans-serif; font-size: 0.85rem;
+  color: var(--accent); padding: 5px 10px;
+  background: rgba(34, 197, 94, 0.1); border-radius: 6px;
+  border: 1px solid rgba(34,197,94,0.2);
+}
+
+/* ===================== CONTROLS ===================== */
+.controls { display: flex; align-items: center; gap: 16px; }
+.control-group { display: flex; align-items: center; gap: 8px; }
+.control-group .label { color: var(--muted); font-size: 0.9rem; font-family: Inter, sans-serif; }
+.options { display: flex; gap: 4px; background: rgba(0,0,0,0.2); padding: 4px; border-radius: 8px; }
+.options button {
+  padding: 4px 10px; border-radius: 6px; border: none;
+  background: transparent; color: var(--muted);
+  cursor: pointer; transition: all 0.2s; font-family: Inter, sans-serif;
+}
+.options button.active { background: rgba(255,255,255,0.08); color: var(--text); }
+#restartBtn, #muteBtn {
+  background: transparent; border: none; color: var(--text);
+  font-size: 1.5rem; cursor: pointer; padding: 0; line-height: 1;
+}
+
+/* ===================== MAIN LAYOUT ===================== */
+main { display: grid; grid-template-columns: 1fr 260px; gap: 18px; align-items: start; }
+
+.typing-area {
+  position: relative; background: var(--panel); padding: 18px; border-radius: 10px;
+  min-height: 170px; display: flex; flex-direction: column; gap: 12px;
+  border: 1px solid var(--border);
+}
+
+.word-stream {
+  position: relative; min-height: 110px; display: flex; flex-wrap: wrap;
+  gap: 0; align-content: flex-start; padding: 6px; outline: none;
+  font-size: 1.2rem; line-height: 2; filter: blur(0); transition: filter 0.3s;
+}
+.word-stream.unfocused { filter: blur(4px); }
+
+.caret {
+  position: absolute; width: 2px; background-color: var(--caret); border-radius: 2px;
+  opacity: 0; transition: top 0.1s ease-out, left 0.1s ease-out, opacity 0.2s;
+}
+.caret.blinking { animation: blink 1s infinite; }
+@keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+
+.word { display: flex; margin-right: 10px; }
+.letter { color: var(--muted); transition: color 0.2s; }
+.letter.correct { color: var(--text); }
+.letter.incorrect { color: var(--error); }
+#input { position: absolute; opacity: 0; z-index: -1; }
+
+/* ===================== STATS SIDEBAR ===================== */
+.stats { display: flex; flex-direction: column; gap: 8px; }
+.stat {
+  background: rgba(255,255,255,0.02); padding: 9px 12px; border-radius: 8px;
+  text-align: center; border: 1px solid var(--border);
+}
+.stat .label { font-size: 11px; color: var(--muted); font-family: Inter, sans-serif; text-transform: uppercase; letter-spacing: 0.05em; }
+.stat .value { font-size: 18px; font-weight: 700; margin-top: 2px; }
+.links { display: flex; justify-content: center; margin-top: 4px; }
+.links button {
+  padding: 8px 14px; border-radius: 8px; border: none; background: var(--accent);
+  color: #062017; cursor: pointer; font-family: Inter, sans-serif; font-size: 0.85rem;
+  font-weight: 600; transition: opacity 0.2s;
+}
+.links button:hover { opacity: 0.85; }
+
+/* ===================== FOOTER ===================== */
+footer {
+  margin-top: 24px; text-align: center; color: var(--muted);
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+}
+footer kbd { background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px; font-family: Inter, sans-serif; }
+.theme-switcher { display: flex; gap: 8px; }
+.theme-switcher button {
+  width: 20px; height: 20px; border-radius: 50%;
+  border: 2px solid rgba(255,255,255,0.2); cursor: pointer; transition: transform 0.2s;
+}
+.theme-switcher button:hover { transform: scale(1.1); }
+.theme-switcher button[data-theme="default"] { background-color: #0f1724; }
+.theme-switcher button[data-theme="olivia"] { background-color: #1A1D2A; }
+.theme-switcher button[data-theme="serika"] { background-color: #323437; }
+.theme-switcher button[data-theme="vscode"] { background-color: #1e1e1e; }
+
+/* ===================== TYPING TUTOR ===================== */
+.typing-tutor {
+  margin-top: 24px; opacity: 0; transition: opacity 0.3s;
+  pointer-events: none; position: relative;
+}
+.typing-tutor.visible { opacity: 1; }
+.hands {
+  position: absolute; top: -5px; left: 0; width: 100%; height: 100%;
+  z-index: 5; overflow: visible;
+}
+.hands svg { width: 100%; height: 100%; overflow: visible; }
+.hand path { stroke-linecap: round; stroke-linejoin: round; transform-origin: 50% 100%; }
+.hand .finger-outline {
+  stroke: var(--muted); stroke-width: 2px; opacity: 0.4; fill: none;
+  transition: stroke 0.2s ease-in-out, opacity 0.2s ease-in-out, stroke-width 0.2s ease-in-out;
+}
+.hand .finger-fill { stroke: none; fill: var(--muted); opacity: 0.05; }
+.hand g.highlight .finger-outline { stroke: var(--key-guide-glow); opacity: 1; stroke-width: 2.5px; }
+
+.keyboard {
+  display: flex; flex-direction: column; gap: 8px; padding: 12px;
+  background: var(--panel); border-radius: 8px; border: 1px solid var(--border);
+  position: relative; z-index: 1; box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+}
+.keyboard-row { display: flex; justify-content: center; gap: 8px; }
+.key {
+  display: flex; align-items: center; justify-content: center;
+  height: 50px; min-width: 50px; padding: 0 10px;
+  background: var(--key-bg); color: var(--key-text); border-radius: 8px;
+  font-size: 1.1rem; font-weight: bold; font-family: Inter, sans-serif;
+  transition: transform 0.1s, box-shadow 0.1s, background-color 0.1s, color 0.1s;
+  box-shadow: 0 3px 0 rgba(0,0,0,0.4); border: 1px solid transparent;
+}
+.key.space { flex-grow: 1; max-width: 400px; }
+.key.guide {
+  background-color: var(--key-guide-bg); color: var(--text);
+  border: 1px solid var(--key-guide-glow);
+  box-shadow: 0 3px 0 rgba(0,0,0,0.4), 0 0 10px var(--key-guide-glow);
+}
+.key.pressed { transform: translateY(2px); box-shadow: 0 1px 0 rgba(0,0,0,0.4); }
+
+/* ===================== MODAL BASE ===================== */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.7); backdrop-filter: blur(4px);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 100; padding: 20px;
+}
+.modal-box {
+  background: var(--panel); border-radius: 16px; padding: 32px;
+  width: 100%; max-width: 420px; position: relative;
+  border: 1px solid var(--border);
+  box-shadow: 0 24px 60px rgba(0,0,0,0.6);
+  animation: modalIn 0.2s ease-out;
+}
+@keyframes modalIn {
+  from { opacity: 0; transform: translateY(-12px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.modal-close {
+  position: absolute; top: 16px; right: 16px;
+  background: transparent; border: none; color: var(--muted);
+  font-size: 1.1rem; cursor: pointer; padding: 4px 8px; border-radius: 6px;
+  transition: color 0.2s, background 0.2s;
+}
+.modal-close:hover { color: var(--text); background: rgba(255,255,255,0.05); }
+
+/* ===================== AUTH MODAL ===================== */
+.modal-tabs {
+  display: flex; gap: 4px; background: rgba(0,0,0,0.3);
+  padding: 4px; border-radius: 10px; margin-bottom: 24px;
+}
+.modal-tab {
+  flex: 1; padding: 8px; border: none; border-radius: 8px;
+  background: transparent; color: var(--muted);
+  cursor: pointer; font-family: Inter, sans-serif; font-size: 0.9rem;
+  transition: all 0.2s;
+}
+.modal-tab.active { background: rgba(255,255,255,0.08); color: var(--text); font-weight: 600; }
+.modal-pane { display: none; }
+.modal-pane.active { display: block; }
+.modal-title { margin: 0 0 4px; font-size: 1.3rem; font-family: Inter, sans-serif; font-weight: 700; }
+.modal-sub { margin: 0 0 20px; color: var(--muted); font-family: Inter, sans-serif; font-size: 0.9rem; }
+.modal-field { margin-bottom: 14px; }
+.modal-field label {
+  display: block; margin-bottom: 6px; font-family: Inter, sans-serif;
+  font-size: 0.85rem; color: var(--muted); font-weight: 500;
+}
+.hint { font-size: 0.78rem; color: var(--muted); opacity: 0.6; margin-left: 6px; }
+.modal-field input {
+  width: 100%; padding: 10px 14px; border-radius: 8px;
+  background: rgba(255,255,255,0.04); border: 1px solid var(--border);
+  color: var(--text); font-family: 'Courier New', monospace; font-size: 1rem;
+  outline: none; transition: border-color 0.2s;
+}
+.modal-field input:focus { border-color: var(--accent); }
+.modal-error {
+  background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239,68,68,0.3);
+  color: #fca5a5; padding: 10px 14px; border-radius: 8px;
+  font-family: Inter, sans-serif; font-size: 0.85rem; margin-bottom: 12px;
+}
+.modal-btn {
+  width: 100%; padding: 11px; border: none; border-radius: 8px;
+  background: var(--accent); color: #062017;
+  font-family: Inter, sans-serif; font-size: 0.95rem; font-weight: 700;
+  cursor: pointer; transition: opacity 0.2s; margin-top: 4px;
+}
+.modal-btn:hover { opacity: 0.87; }
+
+/* ===================== STATS MODAL ===================== */
+.stats-box {
+  max-width: 720px;
+  max-height: 85vh;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.1) transparent;
+}
+.stats-modal-header {
+  display: flex; align-items: center; gap: 14px; margin-bottom: 24px;
+}
+.stats-user-badge {
+  font-family: Inter, sans-serif; font-size: 0.82rem; color: var(--accent);
+  background: rgba(34,197,94,0.1); border: 1px solid rgba(34,197,94,0.25);
+  padding: 4px 10px; border-radius: 20px;
+}
+.stats-loading {
+  text-align: center; padding: 48px 0; color: var(--muted);
+  font-family: Inter, sans-serif; font-size: 0.95rem;
+}
+.stats-empty {
+  text-align: center; padding: 48px 0; color: var(--muted);
+  font-family: Inter, sans-serif;
+}
+.stats-empty-icon { font-size: 2.5rem; margin-bottom: 12px; }
+
+/* Stats Grid */
+.sm-grid {
+  display: grid; grid-template-columns: repeat(4, 1fr);
+  gap: 10px; margin-bottom: 24px;
+}
+.sm-card {
+  background: rgba(255,255,255,0.03); border: 1px solid var(--border);
+  border-radius: 10px; padding: 14px 12px; text-align: center;
+  transition: border-color 0.2s;
+}
+.sm-card:hover { border-color: rgba(255,255,255,0.1); }
+.sm-card--accent { border-color: rgba(34,197,94,0.25); background: rgba(34,197,94,0.05); }
+.sm-card-label {
+  font-family: Inter, sans-serif; font-size: 10px; font-weight: 600;
+  color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em;
+  margin-bottom: 6px;
+}
+.sm-card-value {
+  font-size: 1.6rem; font-weight: 800; line-height: 1;
+  font-family: Inter, sans-serif;
+}
+.sm-card--accent .sm-card-value { color: var(--accent); }
+.sm-unit { font-size: 0.75rem; font-weight: 400; color: var(--muted); margin-left: 2px; }
+
+/* Charts */
+.sm-chart-section { margin-bottom: 20px; }
+.sm-chart-title {
+  font-family: Inter, sans-serif; font-size: 0.78rem; font-weight: 600;
+  color: var(--muted); text-transform: uppercase; letter-spacing: 0.07em;
+  margin-bottom: 10px;
+}
+.sm-canvas {
+  width: 100%; height: 100px; display: block;
+  border-radius: 8px; background: rgba(255,255,255,0.02);
+}
+
+/* History Table */
+.sm-history-section { margin-top: 4px; }
+.sm-table-wrap { overflow-x: auto; border-radius: 10px; border: 1px solid var(--border); }
+.sm-table {
+  width: 100%; border-collapse: collapse;
+  font-family: Inter, sans-serif; font-size: 0.85rem;
+}
+.sm-table thead tr { border-bottom: 1px solid var(--border); }
+.sm-table th {
+  padding: 10px 14px; text-align: left; font-size: 0.72rem;
+  font-weight: 600; color: var(--muted); text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.sm-table tbody tr {
+  border-bottom: 1px solid rgba(255,255,255,0.03);
+  transition: background 0.15s;
+}
+.sm-table tbody tr:last-child { border-bottom: none; }
+.sm-table tbody tr:hover { background: rgba(255,255,255,0.02); }
+.sm-table td { padding: 10px 14px; }
+
+.td-wpm { font-weight: 700; color: var(--text); font-size: 0.95rem; }
+.td-muted { color: var(--muted); }
+.td-good { color: var(--accent); font-weight: 600; }
+.td-ok { color: #f59e0b; font-weight: 600; }
+.td-bad { color: var(--error); font-weight: 600; }
+/* ===================== STATS CALENDAR ===================== */
+
+.sm-calendar-section {
+  margin-bottom: 24px;
+}
+
+.sm-calendar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.sm-cal-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sm-cal-month-label {
+  font-family: Inter, sans-serif;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text);
+  min-width: 130px;
+  text-align: center;
+}
+
+.sm-cal-arrow {
+  background: rgba(255,255,255,0.05);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  border-radius: 6px;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 1.1rem;
+  line-height: 1;
+  transition: color 0.15s, border-color 0.15s;
+  font-family: Inter, sans-serif;
+}
+.sm-cal-arrow:hover {
+  color: var(--text);
+  border-color: rgba(255,255,255,0.2);
+}
+
+/* Day-of-week row */
+.sm-cal-dow-row {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+  margin-bottom: 4px;
+}
+.sm-cal-dow {
+  text-align: center;
+  font-family: Inter, sans-serif;
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 4px 0;
+}
+
+/* Day cells grid */
+.sm-cal-days {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+}
+
+.sm-cal-cell {
+  aspect-ratio: 1;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  background: rgba(255,255,255,0.02);
+  border: 1px solid transparent;
+  transition: background 0.15s, border-color 0.15s, transform 0.1s;
+  cursor: default;
+  user-select: none;
+}
+
+.sm-cal-cell.sm-cal-empty {
+  background: transparent;
+  border-color: transparent;
+}
+
+.sm-cal-cell.sm-cal-active {
+  cursor: pointer;
+  background: rgba(255,255,255,0.04);
+  border-color: rgba(255,255,255,0.08);
+}
+.sm-cal-cell.sm-cal-active:hover {
+  background: rgba(255,255,255,0.08);
+  border-color: rgba(255,255,255,0.15);
+  transform: scale(1.05);
+}
+
+.sm-cal-cell.sm-cal-today .sm-cal-day-num {
+  color: var(--caret);
+  font-weight: 700;
+}
+.sm-cal-cell.sm-cal-today {
+  border-color: rgba(99,102,241,0.3);
+}
+
+.sm-cal-cell.sm-cal-selected {
+  background: rgba(34,197,94,0.1) !important;
+  border-color: rgba(34,197,94,0.4) !important;
+}
+.sm-cal-cell.sm-cal-selected .sm-cal-day-num {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.sm-cal-day-num {
+  font-family: Inter, sans-serif;
+  font-size: 0.75rem;
+  color: var(--muted);
+  line-height: 1;
+}
+.sm-cal-active .sm-cal-day-num {
+  color: var(--text);
+}
+
+/* Activity dot */
+.sm-cal-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  margin-top: 3px;
+  opacity: calc(0.4 + var(--dot-intensity, 1) * 0.12);
+}
+.sm-cal-selected .sm-cal-dot {
+  opacity: 1;
+}
+
+/* ─── Day detail panel ─── */
+
+.sm-day-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.sm-cal-clear-btn {
+  background: rgba(255,255,255,0.05);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-family: Inter, sans-serif;
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+.sm-cal-clear-btn:hover {
+  color: var(--text);
+  border-color: rgba(255,255,255,0.2);
+}
+
+.sm-cal-clear-hint {
+  font-weight: 400;
+  font-size: 0.72rem;
+  color: var(--muted);
+  margin-left: 8px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+/* Day summary chips */
+.sm-day-summary-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.sm-day-chip {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  min-width: 80px;
+}
+.sm-day-chip-label {
+  font-family: Inter, sans-serif;
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.sm-day-chip-val {
+  font-family: Inter, sans-serif;
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: var(--text);
+}
+.sm-chip-accent { color: var(--accent); }
+.sm-chip-err    { color: var(--error); }
+
+.sm-no-results {
+  color: var(--muted);
+  font-family: Inter, sans-serif;
+  font-size: 0.9rem;
+  text-align: center;
+  padding: 24px 0;
+}
+/* ===================== STATS CALENDAR ===================== */
+
+/* Toggle button row */
+.sm-cal-toggle-row {
+  display: flex;
+  justify-content: flex-start;
+  margin-bottom: 12px;
+}
+
+.sm-cal-toggle-btn {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  border-radius: 8px;
+  padding: 7px 16px;
+  font-family: Inter, sans-serif;
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.sm-cal-toggle-btn:hover {
+  color: var(--text);
+  border-color: rgba(255,255,255,0.15);
+  background: rgba(255,255,255,0.07);
+}
+.sm-cal-toggle-btn--active {
+  color: var(--accent) !important;
+  border-color: rgba(34,197,94,0.35) !important;
+  background: rgba(34,197,94,0.07) !important;
+}
+
+.sm-calendar-section {
+  margin-bottom: 24px;
+}
+
+.sm-calendar-header {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  margin-bottom: 12px;
+}
+
+.sm-cal-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sm-cal-month-label {
+  font-family: Inter, sans-serif;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text);
+  min-width: 130px;
+  text-align: center;
+}
+
+.sm-cal-arrow {
+  background: rgba(255,255,255,0.05);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  border-radius: 6px;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 1.1rem;
+  line-height: 1;
+  transition: color 0.15s, border-color 0.15s;
+  font-family: Inter, sans-serif;
+}
+.sm-cal-arrow:hover {
+  color: var(--text);
+  border-color: rgba(255,255,255,0.2);
+}
+
+/* Day-of-week row */
+.sm-cal-dow-row {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+  margin-bottom: 4px;
+}
+.sm-cal-dow {
+  text-align: center;
+  font-family: Inter, sans-serif;
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 4px 0;
+}
+
+/* Day cells grid */
+.sm-cal-days {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+}
+
+.sm-cal-cell {
+  aspect-ratio: 1;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  background: rgba(255,255,255,0.02);
+  border: 1px solid transparent;
+  transition: background 0.15s, border-color 0.15s, transform 0.1s;
+  cursor: default;
+  user-select: none;
+}
+
+.sm-cal-cell.sm-cal-empty {
+  background: transparent;
+  border-color: transparent;
+}
+
+.sm-cal-cell.sm-cal-active {
+  cursor: pointer;
+  background: rgba(255,255,255,0.04);
+  border-color: rgba(255,255,255,0.08);
+}
+.sm-cal-cell.sm-cal-active:hover {
+  background: rgba(255,255,255,0.08);
+  border-color: rgba(255,255,255,0.15);
+  transform: scale(1.05);
+}
+
+.sm-cal-cell.sm-cal-today .sm-cal-day-num {
+  color: var(--caret);
+  font-weight: 700;
+}
+.sm-cal-cell.sm-cal-today {
+  border-color: rgba(99,102,241,0.3);
+}
+
+.sm-cal-cell.sm-cal-selected {
+  background: rgba(34,197,94,0.1) !important;
+  border-color: rgba(34,197,94,0.4) !important;
+}
+.sm-cal-cell.sm-cal-selected .sm-cal-day-num {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.sm-cal-day-num {
+  font-family: Inter, sans-serif;
+  font-size: 0.75rem;
+  color: var(--muted);
+  line-height: 1;
+}
+.sm-cal-active .sm-cal-day-num {
+  color: var(--text);
+}
+
+/* Activity dot */
+.sm-cal-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  margin-top: 3px;
+  opacity: calc(0.4 + var(--dot-intensity, 1) * 0.12);
+}
+.sm-cal-selected .sm-cal-dot {
+  opacity: 1;
+}
+
+/* ─── Day detail panel ─── */
+
+.sm-day-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.sm-cal-clear-btn {
+  background: rgba(255,255,255,0.05);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-family: Inter, sans-serif;
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+.sm-cal-clear-btn:hover {
+  color: var(--text);
+  border-color: rgba(255,255,255,0.2);
+}
+
+.sm-cal-clear-hint {
+  font-weight: 400;
+  font-size: 0.72rem;
+  color: var(--muted);
+  margin-left: 8px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+/* Day summary chips */
+.sm-day-summary-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.sm-day-chip {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  min-width: 80px;
+}
+.sm-day-chip-label {
+  font-family: Inter, sans-serif;
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.sm-day-chip-val {
+  font-family: Inter, sans-serif;
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: var(--text);
+}
+.sm-chip-accent { color: var(--accent); }
+.sm-chip-err    { color: var(--error); }
+
+.sm-no-results {
+  color: var(--muted);
+  font-family: Inter, sans-serif;
+  font-size: 0.9rem;
+  text-align: center;
+  padding: 24px 0;
+}
+.sm-cal-cell:not(.sm-cal-empty) {
+  cursor: pointer;
+}
+.sm-cal-cell:not(.sm-cal-empty):hover {
+  background: rgba(255,255,255,0.05);
+  border-color: rgba(255,255,255,0.1);
+}
+
+/* ===================== RESPONSIVE FIX ===================== */
+.container {
+  max-width: 1100px;
+  padding: 14px;
+}
+
+header {
+  flex-wrap: wrap;
+}
+
+.controls {
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+main {
+  grid-template-columns: 1fr 220px;
+}
+=== File: ./internal/middleware/middleware.go ===
+
+// internal/middleware/middleware.go
+package middleware
+
+import (
+	"log"
+	"net/http"
+)
+
+// WithMiddleware handles CORS preflight logic (OPTIONS), JSON Content-Type, 
+// and gracefully recovers from Go panics.
+func WithMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if err := recover(); err != nil {
+				log.Printf("Server Panic Recovered: %v", err)
+				http.Error(w, `{"error":"internal server error"}`, http.StatusInternalServerError)
+			}
+		}()
+
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		next(w, r)
+	}
+}
+=== File: ./internal/handlers/calendar.go ===
+
+// internal/handlers/calendar.go
+package handlers
+
+import (
+	"encoding/json"
+	"net/http"
+	"strings"
+	"typesprint/internal/store"
+)
+
+// CalendarHandler handles GET /api/results/by-day
+// Returns all days that have test results for the logged-in user,
+// plus the results for a specific date when ?date=YYYY-MM-DD is provided.
+func CalendarHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	username, loggedIn := getSessionUser(r)
+	if !loggedIn {
+		http.Error(w, `{"error":"not authenticated"}`, http.StatusUnauthorized)
+		return
+	}
+
+	store.Mu.RLock()
+	defer store.Mu.RUnlock()
+
+	// Build a map of date -> list of results for this user
+	// client_time is an ISO8601 string like "2025-06-19T14:32:00.000Z"
+	type DaySummary struct {
+		Date     string  `json:"date"`
+		Count    int     `json:"count"`
+		BestWPM  int     `json:"best_wpm"`
+		AvgWPM   float64 `json:"avg_wpm"`
+		AvgAcc   float64 `json:"avg_acc"`
+		TotalErr int     `json:"total_errors"`
+	}
+
+	dayMap := map[string]*DaySummary{}
+
+	for _, res := range store.Results {
+		if res.Username != username {
+			continue
+		}
+		// Extract date portion (first 10 chars of ISO string)
+		date := ""
+		if len(res.ClientTime) >= 10 {
+			date = res.ClientTime[:10]
+		} else if len(res.ServerTime) >= 10 {
+			date = res.ServerTime[:10]
+		}
+		if date == "" {
+			continue
+		}
+
+		if _, ok := dayMap[date]; !ok {
+			dayMap[date] = &DaySummary{Date: date}
+		}
+		d := dayMap[date]
+		d.Count++
+		if res.WPM > d.BestWPM {
+			d.BestWPM = res.WPM
+		}
+		d.AvgWPM += float64(res.WPM)
+		d.AvgAcc += res.Accuracy
+		d.TotalErr += res.Errors
+	}
+
+	// Finalise averages
+	for _, d := range dayMap {
+		if d.Count > 0 {
+			d.AvgWPM = round2(d.AvgWPM / float64(d.Count))
+			d.AvgAcc = round2(d.AvgAcc / float64(d.Count))
+		}
+	}
+
+	// If a specific date is requested, also return its results
+	requestedDate := strings.TrimSpace(r.URL.Query().Get("date"))
+
+	type Response struct {
+		Days        []*DaySummary          `json:"days"`
+		DayResults  interface{}            `json:"day_results,omitempty"`
+		DaySummary  *DaySummary            `json:"day_summary,omitempty"`
+	}
+
+	days := make([]*DaySummary, 0, len(dayMap))
+	for _, d := range dayMap {
+		days = append(days, d)
+	}
+
+	resp := Response{Days: days}
+
+	if requestedDate != "" {
+		// Return individual results for that date
+		type SlimResult struct {
+			WPM        int     `json:"wpm"`
+			RawWPM     float64 `json:"raw_wpm"`
+			Accuracy   float64 `json:"accuracy"`
+			Errors     int     `json:"errors"`
+			Mode       string  `json:"mode"`
+			Value      int     `json:"value"`
+			ClientTime string  `json:"client_time"`
+		}
+		dayResults := []SlimResult{}
+		for _, res := range store.Results {
+			if res.Username != username {
+				continue
+			}
+			date := ""
+			if len(res.ClientTime) >= 10 {
+				date = res.ClientTime[:10]
+			} else if len(res.ServerTime) >= 10 {
+				date = res.ServerTime[:10]
+			}
+			if date == requestedDate {
+				dayResults = append(dayResults, SlimResult{
+					WPM:        res.WPM,
+					RawWPM:     res.RawWPM,
+					Accuracy:   res.Accuracy,
+					Errors:     res.Errors,
+					Mode:       res.Mode,
+					Value:      res.Value,
+					ClientTime: res.ClientTime,
+				})
+			}
+		}
+		resp.DayResults = dayResults
+		resp.DaySummary = dayMap[requestedDate]
+	}
+
+	json.NewEncoder(w).Encode(resp)
+}
+
+func round2(v float64) float64 {
+	return float64(int(v*100+0.5)) / 100
+}
+=== File: ./internal/handlers/results.go ===
+
+// internal/handlers/results.go
+package handlers
+
+import (
+	"encoding/json"
+	"math"
+	"net/http"
+	"sort"
+	"time"
+	"typesprint/internal/models"
+	"typesprint/internal/store"
+)
+
+func ResultsHandler(w http.ResponseWriter, r *http.Request) {
+	username, loggedIn := getSessionUser(r)
+
+	if r.Method == http.MethodPost {
+		var raw map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
+			http.Error(w, `{"error":"invalid json"}`, http.StatusBadRequest)
+			return
+		}
+		
+		toFloat := func(v interface{}) float64 {
+			if v == nil { return 0 }
+			switch n := v.(type) {
+			case float64: return n
+			case int: return float64(n)
+			}
+			return 0
+		}
+		toInt := func(v interface{}) int { return int(toFloat(v)) }
+		toString := func(v interface{}) string {
+			if v == nil { return "" }
+			if s, ok := v.(string); ok { return s }
+			return ""
+		}
+		
+		payload := models.TestResult{
+			WPM:         toInt(raw["wpm"]),
+			RawWPM:      toFloat(raw["raw_wpm"]),
+			Accuracy:    toFloat(raw["accuracy"]),
+			Errors:      toInt(raw["errors"]),
+			Correct:     toInt(raw["correct"]),
+			Typed:       toInt(raw["typed"]),
+			Consistency: toFloat(raw["consistency"]),
+			Mode:        toString(raw["mode"]),
+			Value:       toInt(raw["value"]),
+			Duration:    toFloat(raw["duration"]),
+			ClientTime:  toString(raw["client_time"]),
+		}
+		
+		if loggedIn {
+			payload.Username = username
+		} else {
+			payload.Username = ""
+		}
+		payload.ServerTime = time.Now().Format(time.RFC3339)
+
+		store.Mu.Lock()
+		store.Results = append(store.Results, payload)
+		store.SaveResults()
+		store.Mu.Unlock()
+
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+		return
+	}
+
+	if r.Method == http.MethodGet {
+		if !loggedIn {
+			http.Error(w, `{"error":"not authenticated"}`, http.StatusUnauthorized)
+			return
+		}
+		
+		store.Mu.RLock()
+		userResults := []models.TestResult{}
+		for _, res := range store.Results {
+			if res.Username == username {
+				userResults = append(userResults, res)
+			}
+		}
+		store.Mu.RUnlock()
+
+		stats := computeStats(userResults)
+		json.NewEncoder(w).Encode(stats)
+		return
+	}
+	
+	w.WriteHeader(http.StatusMethodNotAllowed)
+}
+
+func computeStats(res []models.TestResult) models.UserStats {
+	if len(res) == 0 {
+		return models.UserStats{}
+	}
+	sort.Slice(res, func(i, j int) bool { return res[i].ClientTime < res[j].ClientTime })
+
+	stats := models.UserStats{}
+	stats.TestsCompleted = len(res)
+
+	totalWPM := 0
+	totalAcc := 0.0
+	totalErr := 0.0
+	totalTime := 0.0
+
+	for _, r := range res {
+		if r.WPM > stats.BestWPM {
+			stats.BestWPM = r.WPM
+		}
+		if r.Accuracy > stats.BestAccuracy {
+			stats.BestAccuracy = r.Accuracy
+		}
+		totalWPM += r.WPM
+		totalAcc += r.Accuracy
+		totalErr += float64(r.Errors)
+		totalTime += r.Duration
+		stats.WpmHistory = append(stats.WpmHistory, r.WPM)
+		stats.AccHistory = append(stats.AccHistory, r.Accuracy)
+	}
+
+	n := float64(len(res))
+	stats.AvgWPM = math.Round(float64(totalWPM)/n*10) / 10
+	stats.AvgAccuracy = math.Round(totalAcc/n*10) / 10
+	stats.AvgErrors = math.Round(totalErr/n*10) / 10
+	stats.TotalTime = totalTime
+
+	if len(res) >= 10 {
+		firstAvg := 0.0
+		lastAvg := 0.0
+		for i := 0; i < 5; i++ {
+			firstAvg += float64(res[i].WPM)
+			lastAvg += float64(res[len(res)-5+i].WPM)
+		}
+		stats.Improvement = math.Round((lastAvg/5-firstAvg/5)*10) / 10
+	}
+
+	recent := res
+	if len(recent) > 20 {
+		recent = recent[len(recent)-20:]
+	}
+	for i, j := 0, len(recent)-1; i < j; i, j = i+1, j-1 {
+		recent[i], recent[j] = recent[j], recent[i]
+	}
+	stats.RecentResults = recent
+
+	if len(stats.WpmHistory) > 50 {
+		stats.WpmHistory = stats.WpmHistory[len(stats.WpmHistory)-50:]
+		stats.AccHistory = stats.AccHistory[len(stats.AccHistory)-50:]
+	}
+
+	return stats
+}
+=== File: ./internal/handlers/words.go ===
+
+// internal/handlers/words.go
+package handlers
+
+import (
+	"encoding/json"
+	"net/http"
+)
+
+func WordsHandler(w http.ResponseWriter, r *http.Request) {
+	words := []string{
+		"program", "developer", "keyboard", "random", "simple", "example", "function", "variable",
+		"typing", "speed", "accuracy", "challenge", "time", "server", "client", "network",
+		"go", "javascript", "html", "css", "design", "practice", "session", "performance",
+		"monitor", "test", "result", "score", "fast", "focus", "goal", "start",
+		"restart", "statistics", "input", "output", "array", "slice",
+		"structure", "object", "method", "compute", "measure", "minute", "second", "word",
+		"type", "sprint", "boost", "track", "learn", "skill", "flow", "sharp",
+		"quick", "build", "write", "reach", "guide", "force", "press", "train",
+	}
+	json.NewEncoder(w).Encode(words)
+}
+=== File: ./internal/handlers/auth.go ===
+
+// internal/handlers/auth.go
+package handlers
+
+import (
+	"encoding/json"
+	"net/http"
+	"time"
+	"typesprint/internal/models"
+	"typesprint/internal/store"
+	"typesprint/internal/utils"
+)
+
+// getSessionUser is a shared helper for the handlers package
+func getSessionUser(r *http.Request) (string, bool) {
+	cookie, err := r.Cookie("session")
+	if err != nil {
+		return "", false
+	}
+	store.Mu.RLock()
+	sess, ok := store.Sessions[cookie.Value]
+	store.Mu.RUnlock()
+	
+	if !ok || time.Now().After(sess.ExpiresAt) {
+		return "", false
+	}
+	return sess.Username, true
+}
+
+func SignupHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Username == "" || req.Password == "" {
+		http.Error(w, `{"error":"username and password required"}`, http.StatusBadRequest)
+		return
+	}
+	if len(req.Username) < 3 || len(req.Username) > 20 {
+		http.Error(w, `{"error":"username must be 3-20 characters"}`, http.StatusBadRequest)
+		return
+	}
+	if len(req.Password) < 4 {
+		http.Error(w, `{"error":"password must be at least 4 characters"}`, http.StatusBadRequest)
+		return
+	}
+	
+	store.Mu.Lock()
+	defer store.Mu.Unlock()
+	
+	if _, exists := store.Users[req.Username]; exists {
+		http.Error(w, `{"error":"username already taken"}`, http.StatusConflict)
+		return
+	}
+	
+	salt := utils.GenerateSalt()
+	store.Users[req.Username] = models.User{
+		Username:     req.Username,
+		PasswordHash: utils.HashPassword(req.Password, salt),
+		Salt:         salt,
+		CreatedAt:    time.Now().Format(time.RFC3339),
+	}
+	store.SaveUsers()
+
+	token := utils.GenerateSessionToken()
+	store.Sessions[token] = models.Session{Username: req.Username, ExpiresAt: time.Now().Add(30 * 24 * time.Hour)}
+	http.SetCookie(w, &http.Cookie{Name: "session", Value: token, Path: "/", MaxAge: 30 * 24 * 3600, HttpOnly: true})
+	json.NewEncoder(w).Encode(map[string]string{"username": req.Username})
+}
+
+func SigninHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"error":"invalid request"}`, http.StatusBadRequest)
+		return
+	}
+	
+	store.Mu.Lock()
+	defer store.Mu.Unlock()
+	
+	user, exists := store.Users[req.Username]
+	if !exists || utils.HashPassword(req.Password, user.Salt) != user.PasswordHash {
+		http.Error(w, `{"error":"invalid username or password"}`, http.StatusUnauthorized)
+		return
+	}
+	
+	token := utils.GenerateSessionToken()
+	store.Sessions[token] = models.Session{Username: req.Username, ExpiresAt: time.Now().Add(30 * 24 * time.Hour)}
+	http.SetCookie(w, &http.Cookie{Name: "session", Value: token, Path: "/", MaxAge: 30 * 24 * 3600, HttpOnly: true})
+	json.NewEncoder(w).Encode(map[string]string{"username": req.Username})
+}
+
+func SignoutHandler(w http.ResponseWriter, r *http.Request) {
+	cookie, err := r.Cookie("session")
+	if err == nil {
+		store.Mu.Lock()
+		delete(store.Sessions, cookie.Value)
+		store.Mu.Unlock()
+	}
+	http.SetCookie(w, &http.Cookie{Name: "session", Value: "", Path: "/", MaxAge: -1})
+	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+}
+
+func MeHandler(w http.ResponseWriter, r *http.Request) {
+	username, ok := getSessionUser(r)
+	if !ok {
+		http.Error(w, `{"error":"not authenticated"}`, http.StatusUnauthorized)
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]string{"username": username})
+}
+=== File: ./internal/utils/crypto.go ===
+
+// internal/utils/crypto.go
+package utils
+
+import (
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
+)
+
+func HashPassword(password, salt string) string {
+	h := sha256.Sum256([]byte(password + salt))
+	return hex.EncodeToString(h[:])
+}
+
+func GenerateSalt() string {
+	b := make([]byte, 16)
+	rand.Read(b)
+	return hex.EncodeToString(b)
+}
+
+func GenerateSessionToken() string {
+	b := make([]byte, 32)
+	rand.Read(b)
+	return hex.EncodeToString(b)
+}
+=== File: ./internal/models/models.go ===
+
+// internal/models/models.go
+package models
+
+import "time"
+
+type User struct {
+	Username     string `json:"username"`
+	PasswordHash string `json:"password_hash"`
+	Salt         string `json:"salt"`
+	CreatedAt    string `json:"created_at"`
+}
+
+type Session struct {
+	Username  string
+	ExpiresAt time.Time
+}
+
+type TestResult struct {
+	Username    string  `json:"username"`
+	WPM         int     `json:"wpm"`
+	RawWPM      float64 `json:"raw_wpm"`
+	Accuracy    float64 `json:"accuracy"`
+	Errors      int     `json:"errors"`
+	Correct     int     `json:"correct"`
+	Typed       int     `json:"typed"`
+	Consistency float64 `json:"consistency"`
+	Mode        string  `json:"mode"`
+	Value       int     `json:"value"`
+	Duration    float64 `json:"duration"`
+	ClientTime  string  `json:"client_time"`
+	ServerTime  string  `json:"server_time"`
+}
+
+type UserStats struct {
+	TestsCompleted int          `json:"tests_completed"`
+	BestWPM        int          `json:"best_wpm"`
+	AvgWPM         float64      `json:"avg_wpm"`
+	AvgAccuracy    float64      `json:"avg_accuracy"`
+	TotalTime      float64      `json:"total_time_seconds"`
+	BestAccuracy   float64      `json:"best_accuracy"`
+	AvgErrors      float64      `json:"avg_errors"`
+	Improvement    float64      `json:"improvement"`
+	RecentResults  []TestResult `json:"recent_results"`
+	WpmHistory     []int        `json:"wpm_history"`
+	AccHistory     []float64    `json:"acc_history"`
+}
+=== File: ./internal/store/store.go ===
+
+// internal/store/store.go
+package store
+
+import (
+	"encoding/json"
+	"log"
+	"os"
+	"sync"
+	"typesprint/internal/models"
+)
+
+var (
+	Users    = map[string]models.User{}
+	Sessions = map[string]models.Session{}
+	Results  = []models.TestResult{}
+	Mu       sync.RWMutex
+)
+
+const (
+	usersFile   = "./data/users.json"
+	resultsFile = "./data/results.json"
+)
+
+func LoadData() {
+	if b, err := os.ReadFile(usersFile); err == nil {
+		json.Unmarshal(b, &Users)
+	}
+	if b, err := os.ReadFile(resultsFile); err == nil {
+		json.Unmarshal(b, &Results)
+	}
+	log.Printf("Loaded %d users, %d results", len(Users), len(Results))
+}
+
+func SaveUsers() {
+	os.MkdirAll("./data", 0755)
+	b, _ := json.MarshalIndent(Users, "", "  ")
+	os.WriteFile(usersFile, b, 0644)
+}
+
+func SaveResults() {
+	os.MkdirAll("./data", 0755)
+	b, _ := json.MarshalIndent(Results, "", "  ")
+	os.WriteFile(resultsFile, b, 0644)
+}
