@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>TypeSprint — Typing Test</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.11.3/gsap.min.js"></script>
+</head>
+<body>
+  <!-- AUTH MODAL -->
+  <div id="authModal" class="modal-overlay hidden">
+    <div class="modal-box">
+      <button class="modal-close" id="authModalClose">✕</button>
+      <div class="modal-tabs">
+        <button class="modal-tab active" data-tab="signin">Sign In</button>
+        <button class="modal-tab" data-tab="signup">Sign Up</button>
+      </div>
+
+      <div id="tabSignin" class="modal-pane active">
+        <h2 class="modal-title">Welcome back</h2>
+        <p class="modal-sub">Sign in to track your progress</p>
+        <div class="modal-field">
+          <label>Username</label>
+          <input type="text" id="siUsername" placeholder="your username" autocomplete="username" />
+        </div>
+        <div class="modal-field">
+          <label>Password</label>
+          <input type="password" id="siPassword" placeholder="••••••••" autocomplete="current-password" />
+        </div>
+        <div id="siError" class="modal-error hidden"></div>
+        <button class="modal-btn" id="siSubmit">Sign In</button>
+      </div>
+
+      <div id="tabSignup" class="modal-pane">
+        <h2 class="modal-title">Create account</h2>
+        <p class="modal-sub">Start tracking your typing journey</p>
+        <div class="modal-field">
+          <label>Username <span class="hint">3–20 chars</span></label>
+          <input type="text" id="suUsername" placeholder="choose a username" autocomplete="username" />
+        </div>
+        <div class="modal-field">
+          <label>Password <span class="hint">min 4 chars</span></label>
+          <input type="password" id="suPassword" placeholder="••••••••" autocomplete="new-password" />
+        </div>
+        <div id="suError" class="modal-error hidden"></div>
+        <button class="modal-btn" id="suSubmit">Create Account</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- STATS MODAL -->
+  <div id="statsModal" class="modal-overlay hidden">
+    <div class="modal-box stats-box">
+      <button class="modal-close" id="statsModalClose">✕</button>
+      <div class="stats-modal-header">
+        <h2 class="modal-title">My Statistics</h2>
+        <span id="statsUsername" class="stats-user-badge"></span>
+      </div>
+
+      <div id="statsContent">
+        <div class="stats-loading">Loading your stats…</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="container">
+    <header>
+      <div class="header-left">
+        <div id="authContainer">
+          <div id="loggedOutBtns">
+            <button id="signUpBtn">Sign Up</button>
+            <button id="signInBtn">Sign In</button>
+          </div>
+          <div id="loggedInBtns" class="hidden">
+            <span id="userBadge" class="user-badge"></span>
+            <button id="statsBtn" title="View Statistics">📊 Stats</button>
+            <button id="signOutBtn">Sign Out</button>
+          </div>
+        </div>
+        <h1>TypeSprint</h1>
+      </div>
+
+      <div class="controls">
+        <div class="control-group">
+          <div class="options" id="langOptions">
+            <button data-lang="en" class="active">EN</button>
+            <button data-lang="uz">UZ</button>
+          </div>
+        </div>
+        <div class="control-group">
+          <div class="label" data-translate-key="mode">Mode:</div>
+          <div class="options" id="modeOptions">
+            <button data-mode="time" class="active">time</button>
+            <button data-mode="words">words</button>
+          </div>
+        </div>
+        <div class="control-group">
+          <div class="label" data-translate-key="count">Count:</div>
+          <div class="options" id="valueOptions">
+            <button data-value="15">15</button>
+            <button data-value="30" class="active">30</button>
+            <button data-value="60">60</button>
+            <button data-value="120">120</button>
+          </div>
+        </div>
+        <button id="muteBtn" title="Mute/Unmute Sound">🔊</button>
+        <button id="restartBtn" title="Restart Test (Esc)" data-translate-title-key="restartTitle">🔄</button>
+      </div>
+    </header>
+
+    <main>
+      <section class="typing-area">
+        <div id="wordStream" class="word-stream" tabindex="0">
+          <div id="caret" class="caret"></div>
+        </div>
+        <input id="input" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" />
+      </section>
+
+      <aside class="stats">
+        <div class="stat"> <div class="label" data-translate-key="wpm">WPM</div> <div id="wpm" class="value">0</div> </div>
+        <div class="stat"> <div class="label">Raw WPM</div> <div id="rawWpm" class="value">0</div> </div>
+        <div class="stat"> <div class="label" data-translate-key="accuracy">Accuracy</div> <div id="accuracy" class="value">0%</div> </div>
+        <div class="stat"> <div class="label" data-translate-key="time">Time</div> <div id="time" class="value">00:00</div> </div>
+        <div class="stat"> <div class="label" data-translate-key="correct">Correct</div> <div id="correctCount" class="value">0</div> </div>
+        <div class="stat"> <div class="label" data-translate-key="typed">Typed</div> <div id="typedCount" class="value">0</div> </div>
+        <div class="stat"> <div class="label" data-translate-key="errors">Errors</div> <div id="errors" class="value">0</div> </div>
+        <div class="stat"> <div class="label">Consistency</div> <div id="consistency" class="value">—</div> </div>
+        <div class="stat"> <div class="label">Progress</div> <div id="progress" class="value">0%</div> </div>
+        <div class="links">
+          <button id="saveResult" data-translate-key="saveResult">Save Result</button>
+        </div>
+      </aside>
+    </main>
+
+    <div id="typingTutor" class="typing-tutor">
+      <div id="hands" class="hands">
+        <svg viewBox="0 0 1000 300" xmlns="http://www.w3.org/2000/svg" style="overflow: visible;">
+          <g class="hand" id="left-hand">
+            <g id="left-pinky">
+              <path class="finger-fill" d="M366.3,153.6c-2.3-11.4-5.8-31.3-3.6-43.1c2.1-11.4,12-22.3,21.7-25.1c9.7-2.8,22.2-2.1,28.6,8.7c6.4,10.8-1.1,26-5,35.7 c-7.8,19.3-15.1,42.5-19.1,62.1c-4,19.6-5.8,39.3-0.2,58.3c-11.2-19.1-16.3-41.9-12.4-64.8C363.3,176.4,368.6,165.1,366.3,153.6z"/>
+              <path class="finger-outline" d="M366.3,153.6c-2.3-11.4-5.8-31.3-3.6-43.1c2.1-11.4,12-22.3,21.7-25.1c9.7-2.8,22.2-2.1,28.6,8.7c6.4,10.8-1.1,26-5,35.7 c-7.8,19.3-15.1,42.5-19.1,62.1c-4,19.6-5.8,39.3-0.2,58.3c-11.2-19.1-16.3-41.9-12.4-64.8C363.3,176.4,368.6,165.1,366.3,153.6z"/>
+            </g>
+            <g id="left-ring">
+              <path class="finger-fill" d="M407.3,165.8c-1.8-11.4-5.1-31.4-2.8-43.2c2.3-11.8,12.2-22.5,22-25c9.8-2.5,22.3-1.6,28.6,9.4c6.3,11,0,26.4-3.8,36 c-7.5,19-14.2,42.1-18,61.5c-3.8,19.4-5.3,38.9,0.3,57.7c-11.4-18.7-16.7-41.2-12.8-63.5C403.4,188.9,409.1,177.2,407.3,165.8z"/>
+              <path class="finger-outline" d="M407.3,165.8c-1.8-11.4-5.1-31.4-2.8-43.2c2.3-11.8,12.2-22.5,22-25c9.8-2.5,22.3-1.6,28.6,9.4c6.3,11,0,26.4-3.8,36 c-7.5,19-14.2,42.1-18,61.5c-3.8,19.4-5.3,38.9,0.3,57.7c-11.4-18.7-16.7-41.2-12.8-63.5C403.4,188.9,409.1,177.2,407.3,165.8z"/>
+            </g>
+            <g id="left-middle">
+              <path class="finger-fill" d="M447.8,174.5c-1.1-11.2-4-30.8-1.6-42.3c2.4-11.5,12.1-22,21.5-24.5c9.4-2.5,21.5-1.7,27.5,8.9c6,10.6,0.6,25.6-3,35 c-6.9,18.4-13,41-16.6,60c-3.6,19-5,37.9,0.4,56.5c-11.2-18.4-16.3-40.4-12.4-61.9C443.7,197.1,448.9,185.7,447.8,174.5z"/>
+              <path class="finger-outline" d="M447.8,174.5c-1.1-11.2-4-30.8-1.6-42.3c2.4-11.5,12.1-22,21.5-24.5c9.4-2.5,21.5-1.7,27.5,8.9c6,10.6,0.6,25.6-3,35 c-6.9,18.4-13,41-16.6,60c-3.6,19-5,37.9,0.4,56.5c-11.2-18.4-16.3-40.4-12.4-61.9C443.7,197.1,448.9,185.7,447.8,174.5z"/>
+            </g>
+            <g id="left-index">
+              <path class="finger-fill" d="M485.4,183.2c-0.1-11.2-2.5-30.8-0.1-42.3c2.4-11.5,11.8-21.8,20.9-24.1c9.1-2.3,20.8-1.6,26.5,8.7c5.7,10.3,1.3,25-2.2,34 c-6.5,17.4-12,39.3-15.3,57.9c-3.3,18.6-4.5,37,0.7,55c-10.7-18-15.5-39.3-11.8-60C484.2,203.2,485.5,194.4,485.4,183.2z"/>
+              <path class="finger-outline" d="M485.4,183.2c-0.1-11.2-2.5-30.8-0.1-42.3c2.4-11.5,11.8-21.8,20.9-24.1c9.1-2.3,20.8-1.6,26.5,8.7c5.7,10.3,1.3,25-2.2,34 c-6.5,17.4-12,39.3-15.3,57.9c-3.3,18.6-4.5,37,0.7,55c-10.7-18-15.5-39.3-11.8-60C484.2,203.2,485.5,194.4,485.4,183.2z"/>
+            </g>
+            <g id="left-thumb">
+              <path class="finger-fill" d="M470.8,223.5c11.3-1.6,26.2,2.8,33.6,12.7c7.4,9.9,8,22.8-1.5,28.8c-9.5,6-25,0.3-33.3-8.4c-8.3-8.7-9.5-22.1-1.8-31 C475.2,224.2,470.8,223.5,470.8,223.5z"/>
+              <path class="finger-outline" d="M470.8,223.5c11.3-1.6,26.2,2.8,33.6,12.7c7.4,9.9,8,22.8-1.5,28.8c-9.5,6-25,0.3-33.3-8.4c-8.3-8.7-9.5-22.1-1.8-31 C475.2,224.2,470.8,223.5,470.8,223.5z"/>
+            </g>
+          </g>
+          <g class="hand" id="right-hand">
+            <g id="right-pinky">
+              <path class="finger-fill" d="M633.7,153.6c2.3-11.4,5.8-31.3,3.6-43.1c-2.1-11.4-12-22.3-21.7-25.1c-9.7-2.8-22.2-2.1-28.6,8.7c-6.4,10.8,1.1,26,5,35.7 c7.8,19.3,15.1,42.5,19.1,62.1c4,19.6,5.8,39.3,0.2,58.3c11.2-19.1,16.3-41.9,12.4-64.8C636.7,176.4,631.4,165.1,633.7,153.6z"/>
+              <path class="finger-outline" d="M633.7,153.6c2.3-11.4,5.8-31.3,3.6-43.1c-2.1-11.4-12-22.3-21.7-25.1c-9.7-2.8-22.2-2.1-28.6,8.7c-6.4,10.8,1.1,26,5,35.7 c7.8,19.3,15.1,42.5,19.1,62.1c4,19.6,5.8,39.3,0.2,58.3c11.2-19.1,16.3-41.9,12.4-64.8C636.7,176.4,631.4,165.1,633.7,153.6z"/>
+            </g>
+            <g id="right-ring">
+              <path class="finger-fill" d="M592.7,165.8c1.8-11.4,5.1-31.4,2.8-43.2c-2.3-11.8-12.2-22.5-22-25c-9.8-2.5-22.3-1.6-28.6,9.4c-6.3,11,0,26.4,3.8,36 c7.5,19,14.2,42.1,18,61.5c3.8,19.4,5.3,38.9-0.3,57.7c11.4-18.7,16.7-41.2,12.8-63.5C596.6,188.9,590.9,177.2,592.7,165.8z"/>
+              <path class="finger-outline" d="M592.7,165.8c1.8-11.4,5.1-31.4,2.8-43.2c-2.3-11.8-12.2-22.5-22-25c-9.8-2.5-22.3-1.6-28.6,9.4c-6.3,11,0,26.4,3.8,36 c7.5,19,14.2,42.1,18,61.5c3.8,19.4,5.3,38.9-0.3,57.7c11.4-18.7,16.7-41.2,12.8-63.5C596.6,188.9,590.9,177.2,592.7,165.8z"/>
+            </g>
+            <g id="right-middle">
+              <path class="finger-fill" d="M552.2,174.5c1.1-11.2,4-30.8,1.6-42.3c-2.4-11.5-12.1-22-21.5-24.5c-9.4-2.5-21.5-1.7-27.5,8.9c-6,10.6-0.6,25.6,3,35 c6.9,18.4,13,41,16.6,60c3.6,19,5,37.9-0.4,56.5c11.2-18.4,16.3-40.4,12.4-61.9C556.3,197.1,551.1,185.7,552.2,174.5z"/>
+              <path class="finger-outline" d="M552.2,174.5c1.1-11.2,4-30.8,1.6-42.3c-2.4-11.5-12.1-22-21.5-24.5c-9.4-2.5-21.5-1.7-27.5,8.9c-6,10.6-0.6,25.6,3,35 c6.9,18.4,13,41,16.6,60c3.6,19,5,37.9-0.4,56.5c11.2-18.4,16.3-40.4,12.4-61.9C556.3,197.1,551.1,185.7,552.2,174.5z"/>
+            </g>
+            <g id="right-index">
+              <path class="finger-fill" d="M514.6,183.2c0.1-11.2,2.5-30.8,0.1-42.3c-2.4-11.5-11.8-21.8-20.9-24.1c-9.1-2.3-20.8-1.6-26.5,8.7c-5.7,10.3-1.3,25,2.2,34 c6.5,17.4,12,39.3,15.3,57.9c3.3,18.6,4.5,37-0.7,55c10.7-18,15.5-39.3,11.8-60C515.8,203.2,514.5,194.4,514.6,183.2z"/>
+              <path class="finger-outline" d="M514.6,183.2c0.1-11.2,2.5-30.8,0.1-42.3c-2.4-11.5-11.8-21.8-20.9-24.1c-9.1-2.3-20.8-1.6-26.5,8.7c-5.7,10.3-1.3,25,2.2,34 c6.5,17.4,12,39.3,15.3,57.9c3.3,18.6,4.5,37-0.7,55c10.7-18,15.5-39.3,11.8-60C515.8,203.2,514.5,194.4,514.6,183.2z"/>
+            </g>
+            <g id="right-thumb">
+              <path class="finger-fill" d="M529.2,223.5c-11.3-1.6-26.2,2.8-33.6,12.7c-7.4,9.9-8,22.8,1.5,28.8c9.5,6,25,0.3,33.3-8.4c8.3-8.7,9.5-22.1,1.8-31 C524.8,224.2,529.2,223.5,529.2,223.5z"/>
+              <path class="finger-outline" d="M529.2,223.5c-11.3-1.6-26.2,2.8-33.6,12.7c-7.4,9.9-8,22.8,1.5,28.8c9.5,6,25,0.3,33.3-8.4c8.3-8.7,9.5-22.1,1.8-31 C524.8,224.2,529.2,223.5,529.2,223.5z"/>
+            </g>
+          </g>
+        </svg>
+      </div>
+      <div id="keyboard" class="keyboard"></div>
+    </div>
+
+    <footer>
+      <div id="themeSwitcher" class="theme-switcher">
+        <button data-theme="default" title="Default Dark"></button>
+        <button data-theme="olivia" title="Olivia"></button>
+        <button data-theme="serika" title="Serika Dark"></button>
+        <button data-theme="vscode" title="VS Code"></button>
+      </div>
+      <small data-translate-html="restartFooter">Press <kbd>Esc</kbd> to restart</small>
+    </footer>
+  </div>
+
+  <script type="module" src="/static/js/main.js"></script>
+</body>
+</html>
