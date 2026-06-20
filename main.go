@@ -33,12 +33,13 @@ func main() {
 	http.HandleFunc("/api/auth/signout", middleware.WithMiddleware(handlers.SignoutHandler))
 	http.HandleFunc("/api/auth/me", middleware.WithMiddleware(handlers.MeHandler))
 
-    // --- CHANGE STARTS HERE ---
 	port := os.Getenv("PORT")
 	if port == "" {
-		port = "8082" // Fallback for local development
+		port = "8082" // Dasturlash uchun standart port
 	}
 
 	fmt.Printf("TypeSprint running on port %s\n", port)
-	log.Fatal(http.ListenAndServe(":"+port, nil))
+    
+	// SHU YERNI O'ZGARTIRING: ":" o'rniga "0.0.0.0:" qiling
+	log.Fatal(http.ListenAndServe("0.0.0.0:"+port, nil))
 }
