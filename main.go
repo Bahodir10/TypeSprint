@@ -40,6 +40,6 @@ func main() {
 
 	fmt.Printf("TypeSprint running on port %s\n", port)
     
-	// SHU YERNI O'ZGARTIRING: ":" o'rniga "0.0.0.0:" qiling
-	log.Fatal(http.ListenAndServe("0.0.0.0:"+port, nil))
+    // SHU QATORNI QAYTA O'ZGARTIRING (0.0.0.0 ni olib tashlang):
+    log.Fatal(http.ListenAndServe(":"+port, nil))
 }
